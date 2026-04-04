@@ -11,6 +11,8 @@ export const bancoExercicios = [
   { id: "cross_over", nome: "Cross Over (Polia Alta)", musculo: "Peito Inferior", foto: "https://fitnessprogramer.com/wp-content/uploads/2021/02/Cable-Cross-over.gif", musculoImg: imgMusc },
   { id: "voador_peitoral", nome: "Voador / Pec Deck", musculo: "Peito", foto: "https://fitnessprogramer.com/wp-content/uploads/2021/02/Chest-Fly.gif", musculoImg: imgMusc },
   { id: "sup_declinado", nome: "Supino Declinado", musculo: "Peito Inferior", foto: "https://fitnessprogramer.com/wp-content/uploads/2021/02/Barbell-Decline-Bench-Press.gif", musculoImg: imgMusc },
+  { id: "supino_maq", nome: "Supino Máquina", musculo: "Peito", foto: "https://fitnessprogramer.com/wp-content/uploads/2021/02/Lever-Chest-Press.gif", musculoImg: imgMusc },
+  { id: "crucifixo_maq", nome: "Crucifixo Máquina", musculo: "Peito", foto: "https://fitnessprogramer.com/wp-content/uploads/2021/02/Lever-Fly.gif", musculoImg: imgMusc },
 
   // --- COSTAS ---
   { id: "puxada_frente", nome: "Puxada Frente", musculo: "Costas", foto: "https://fitnessprogramer.com/wp-content/uploads/2021/02/Lat-Pulldown.gif", musculoImg: imgMusc },
@@ -20,6 +22,7 @@ export const bancoExercicios = [
   { id: "barra_fixa", nome: "Barra Fixa", musculo: "Costas", foto: "https://fitnessprogramer.com/wp-content/uploads/2021/02/Pull-up.gif", musculoImg: imgMusc },
   { id: "puxada_triangulo", nome: "Puxada Triângulo", musculo: "Costas", foto: "https://fitnessprogramer.com/wp-content/uploads/2021/02/V-bar-Pull-down.gif", musculoImg: imgMusc },
   { id: "pull_over_corda", nome: "Pull Over na Polia (Corda)", musculo: "Costas/Dorsal", foto: "https://fitnessprogramer.com/wp-content/uploads/2021/02/Straight-Arm-Pull-down.gif", musculoImg: imgMusc },
+  { id: "crucifixo_inv_maq", nome: "Crucifixo Inverso Máquina", musculo: "Costas/Ombro Post.", foto: "https://fitnessprogramer.com/wp-content/uploads/2021/02/Lever-Reverse-Fly.gif", musculoImg: imgMusc },
 
   // --- PERNAS ---
   { id: "agacha_livre", nome: "Agachamento Livre", musculo: "Pernas", foto: "https://fitnessprogramer.com/wp-content/uploads/2021/02/BARBELL-SQUAT.gif", musculoImg: imgMusc },
@@ -32,6 +35,9 @@ export const bancoExercicios = [
   { id: "hack_machine", nome: "Agachamento no Hack", musculo: "Pernas", foto: "https://fitnessprogramer.com/wp-content/uploads/2021/02/Sled-Hack-Squat.gif", musculoImg: imgMusc },
   { id: "flexora_sentada", nome: "Cadeira Flexora", musculo: "Posterior", foto: "https://fitnessprogramer.com/wp-content/uploads/2021/02/Seated-Leg-Curl.gif", musculoImg: imgMusc },
   { id: "abdutora", nome: "Cadeira Abdutora", musculo: "Glúteo/Quadril", foto: "https://fitnessprogramer.com/wp-content/uploads/2021/02/Seated-Hip-Abduction.gif", musculoImg: imgMusc },
+  { id: "elev_pelvica", nome: "Elevação Pélvica", musculo: "Glúteo", foto: "https://fitnessprogramer.com/wp-content/uploads/2021/02/Barbell-Hip-Thrust.gif", musculoImg: imgMusc },
+  { id: "terra", nome: "Levantamento Terra", musculo: "Pernas/Costas", foto: "https://fitnessprogramer.com/wp-content/uploads/2021/02/Barbell-Deadlift.gif", musculoImg: imgMusc },
+  { id: "panturrilha_sentado", nome: "Panturrilha Sentado", musculo: "Panturrilha", foto: "https://fitnessprogramer.com/wp-content/uploads/2021/02/Seated-Calf-Raise.gif", musculoImg: imgMusc },
 
   // --- BRAÇOS ---
   { id: "rosca_direta", nome: "Rosca Direta (Barra W)", musculo: "Bíceps", foto: "https://fitnessprogramer.com/wp-content/uploads/2021/02/Barbell-Curl.gif", musculoImg: imgMusc },
@@ -43,13 +49,22 @@ export const bancoExercicios = [
   { id: "rosca_scott", nome: "Rosca Scott", musculo: "Bíceps", foto: "https://fitnessprogramer.com/wp-content/uploads/2021/02/Preacher-Curl.gif", musculoImg: imgMusc },
   { id: "triceps_paralela", nome: "Tríceps Paralela (Banco)", musculo: "Tríceps", foto: "https://fitnessprogramer.com/wp-content/uploads/2021/02/Bench-Dip.gif", musculoImg: imgMusc },
   { id: "rosca_inversa", nome: "Rosca Inversa (Polia)", musculo: "Antebraço", foto: "https://fitnessprogramer.com/wp-content/uploads/2021/02/Reverse-Curls.gif", musculoImg: imgMusc },
+  { id: "triceps_press_maq", nome: "Tríceps Press Máquina", musculo: "Tríceps", foto: "https://fitnessprogramer.com/wp-content/uploads/2021/02/Lever-Triceps-Extension.gif", musculoImg: imgMusc },
 
   // --- OMBROS ---
   { id: "desenv_halt", nome: "Desenvolvimento (Halteres)", musculo: "Ombros", foto: "https://fitnessprogramer.com/wp-content/uploads/2021/02/Dumbbell-Shoulder-Press.gif", musculoImg: imgMusc },
   { id: "elev_lateral", nome: "Elevação Lateral", musculo: "Ombros", foto: "https://fitnessprogramer.com/wp-content/uploads/2021/02/Dumbbell-Lateral-Raise.gif", musculoImg: imgMusc },
-  { id: "elev_frontal", nome: "Elevação Frontal", musculo: "Ombros", foto: "https://fitnessprogramer.com/wp-content/uploads/2021/02/Dumbbell-Front-Raise.gif", musculoImg: imgMusc },
+  { id: "elev_frontal", nome: "Elevação Frontal (Halter)", musculo: "Ombros", foto: "https://fitnessprogramer.com/wp-content/uploads/2021/02/Dumbbell-Front-Raise.gif", musculoImg: imgMusc },
   { id: "encolhimento", nome: "Encolhimento (Trapézio)", musculo: "Trapézio", foto: "https://fitnessprogramer.com/wp-content/uploads/2021/02/Dumbbell-Shrug.gif", musculoImg: imgMusc },
   { id: "face_pull", nome: "Face Pull (Posterior)", musculo: "Ombro Posterior", foto: "https://fitnessprogramer.com/wp-content/uploads/2021/02/Face-Pull.gif", musculoImg: imgMusc },
+  { id: "elev_frontal_polia", nome: "Elevação Frontal (Polia)", musculo: "Ombros", foto: "https://fitnessprogramer.com/wp-content/uploads/2021/02/Cable-Front-Raise.gif", musculoImg: imgMusc },
+  { id: "elev_lateral_maq", nome: "Elevação Lateral Máquina", musculo: "Ombros", foto: "https://fitnessprogramer.com/wp-content/uploads/2021/02/Lever-Lateral-Raise.gif", musculoImg: imgMusc },
+  { id: "desenv_maq", nome: "Desenvolvimento Máquina", musculo: "Ombros", foto: "https://fitnessprogramer.com/wp-content/uploads/2021/02/Lever-Shoulder-Press.gif", musculoImg: imgMusc },
+
+  // --- CARDIO ---
+  { id: "esteira", nome: "Esteira", musculo: "Cardio", foto: "https://fitnessprogramer.com/wp-content/uploads/2021/04/Treadmill.gif", musculoImg: imgMusc },
+  { id: "bike", nome: "Bicicleta Ergométrica", musculo: "Cardio", foto: "https://fitnessprogramer.com/wp-content/uploads/2021/04/Stationary-Bicycle.gif", musculoImg: imgMusc },
+  { id: "escada", nome: "Escada (Stepper)", musculo: "Cardio", foto: "https://fitnessprogramer.com/wp-content/uploads/2021/04/Stairmaster.gif", musculoImg: imgMusc },
 
   // --- ABDÔMEN ---
   { id: "abdominal_supra", nome: "Abdominal Supra", musculo: "Abdômen", foto: "https://fitnessprogramer.com/wp-content/uploads/2021/05/Crunch.gif", musculoImg: imgMusc },
