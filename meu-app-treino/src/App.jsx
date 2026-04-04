@@ -36,7 +36,7 @@ function App() {
 
   useEffect(() => {
     if (cicloSelecionado) {
-      const q = query(collection(db, "treinos"), where("cicloId", "==", cicloSelecionado.id), orderBy("createdAt", "asc"));
+      const q = query(collection(db, "treinos"), where("cicloid", "==", cicloSelecionado.id), orderBy("createdAt", "asc"));
       const unsubT = onSnapshot(q, (snapshot) => {
         setMeusTreinos(snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id })));
       });
