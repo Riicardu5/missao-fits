@@ -39,7 +39,7 @@ function App() {
     if (cicloSelecionado?.id) {
       const q = query(
         collection(db, "treinos"), 
-        where("cicloid", "==", cicloSelecionado.id), 
+        where("cicloId", "==", cicloSelecionado.id), 
         orderBy("createdAt", "asc")
       );
       const unsubT = onSnapshot(q, (snapshot) => {
@@ -166,7 +166,7 @@ function App() {
             // CRIAÇÃO PADRONIZADA: cicloid minúsculo
             const docRef = await addDoc(collection(db,"treinos"), {
                 nome: novoNome, 
-                cicloid: cicloSelecionado.id, 
+                cicloId: cicloSelecionado.id, 
                 userId: user.uid, 
                 createdAt: new Date()
             });
