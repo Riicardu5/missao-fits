@@ -73,12 +73,25 @@ function App() {
 
   const concluirTreinoDodia = async () => {
     if (!cicloSelecionado || meusTreinos.length === 0) return;
+    
+    // 1. Acha qual é o próximo treino na lista
     const index = meusTreinos.findIndex(t => t.id === cicloSelecionado.ultimoTreinoId);
     let prox = index + 1 >= meusTreinos.length ? 0 : index + 1;
     const proxT = meusTreinos[prox];
-    await updateDoc(doc(db, "ciclos", cicloSelecionado.id), {
+
+    // 2. Prepara os dados novos
+    const novosDados = {
       ultimoTreinoId: proxT.id,
       ultimoTreinoNome: proxT.nome
+    };
+
+    // 3. Atualiza o Firebase (o que você já fazia)
+    await updateDoc(doc(db, "ciclos", cicloSelecionado.id), novosDados);
+
+    // 4. O PULO DO GATO: Atualiza o estado no React para mudar na tela NA HORA
+    setCicloSelecionado({
+      ...cicloSelecionado,
+      ...novosDados
     });
   };
 
