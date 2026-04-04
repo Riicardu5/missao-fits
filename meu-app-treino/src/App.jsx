@@ -20,30 +20,36 @@ function App() {
   const [novoNome, setNovoNome] = useState('');
   const [busca, setBusca] = useState('');
 
+  // 1. Monitora o usuário
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
       if (currentUser) {
         const q = query(collection(db, "ciclos"), where("userId", "==", currentUser.uid), orderBy("createdAt", "desc"));
         onSnapshot(q, (snapshot) => {
-          const lista = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id }));
-          setMeusCiclos(lista);
+          setMeusCiclos(snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id })));
         });
       }
     });
     return () => unsub();
   }, []);
 
+  // 2. Busca Treinos do Ciclo (PADRONIZADO: cicloid minúsculo)
   useEffect(() => {
-    if (cicloSelecionado) {
-      const q = query(collection(db, "treinos"), where("cicloid", "==", cicloSelecionado.id), orderBy("createdAt", "asc"));
+    if (cicloSelecionado?.id) {
+      const q = query(
+        collection(db, "treinos"), 
+        where("cicloid", "==", cicloSelecionado.id), 
+        orderBy("createdAt", "asc")
+      );
       const unsubT = onSnapshot(q, (snapshot) => {
         setMeusTreinos(snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id })));
-      });
+      }, (error) => console.error("Erro no índice de treinos:", error));
       return () => unsubT();
     }
   }, [cicloSelecionado?.id]);
 
+  // 3. Busca Exercícios do Treino Atual
   useEffect(() => {
     if (cicloSelecionado?.ultimoTreinoId) {
       const q = query(collection(db, "exercicios_treino"), where("treinoId", "==", cicloSelecionado.ultimoTreinoId));
@@ -55,6 +61,7 @@ function App() {
     }
   }, [cicloSelecionado?.ultimoTreinoId]);
 
+  // 4. Busca Exercícios para Editar
   useEffect(() => {
     if (treinoSelecionado) {
       const q = query(collection(db, "exercicios_treino"), where("treinoId", "==", treinoSelecionado.id));
@@ -77,15 +84,11 @@ function App() {
 
   const deletarItem = async (col, id) => {
     if(window.confirm("Excluir definitivamente?")) {
-      // PREVENÇÃO DO BUG: Limpa os estados antes de deletar no banco
       if (col === "ciclos") setCicloSelecionado(null);
       if (col === "treinos") setTreinoSelecionado(null);
-      
       try {
         await deleteDoc(doc(db, col, id));
-      } catch (err) {
-        console.error("Erro ao deletar:", err);
-      }
+      } catch (err) { console.error(err); }
     }
   };
 
@@ -95,6 +98,7 @@ function App() {
     </div></div>
   );
 
+  // TELA DE EDIÇÃO DE TREINO
   if (treinoSelecionado) return (
     <div style={styles.containerMobile}>
       <header style={styles.header}>
@@ -115,14 +119,14 @@ function App() {
             </div>
           </div>
         ))}
-        <h4 style={styles.titleSection}>Adicionar</h4>
-        <input placeholder="Buscar..." value={busca} onChange={(e)=>setBusca(e.target.value)} style={styles.inputTreino}/>
+        <h4 style={styles.titleSection}>Adicionar Exercício</h4>
+        <input placeholder="Buscar no banco..." value={busca} onChange={(e)=>setBusca(e.target.value)} style={styles.inputTreino}/>
         <div style={{marginTop:'15px', maxHeight:'300px', overflowY:'auto'}}>
           {bancoExercicios.filter(e => e.nome.toLowerCase().includes(busca.toLowerCase())).map(ex => (
             <div key={ex.id} style={styles.treinoCard}>
               <img src={ex.foto} style={styles.exerciseImg} alt=""/>
               <div style={{flex:1, marginLeft:'10px'}}><small>{ex.nome}</small></div>
-              <button onClick={()=>addDoc(collection(db, "exercicios_treino"), {treinoId: treinoSelecionado.id, nome: ex.nome, foto: ex.foto, series:'', carga:'', anotacao:''})} style={styles.btnAddSmall}>+</button>
+              <button onClick={()=>addDoc(collection(db, "exercicios_treino"), {treinoId: treinoSelecionado.id, nome: ex.nome, foto: ex.foto, series:'', carga:''})} style={styles.btnAddSmall}>+</button>
             </div>
           ))}
         </div>
@@ -130,6 +134,7 @@ function App() {
     </div>
   );
 
+  // TELA DO CICLO (LISTA DE TREINOS)
   if (cicloSelecionado) return (
     <div style={styles.containerMobile}>
       <header style={styles.header}>
@@ -148,18 +153,29 @@ function App() {
               <img src={ex.foto} style={styles.exerciseImgSmall} alt=""/>
               <div style={{marginLeft:'10px'}}>
                 <strong>{ex.nome}</strong><br/>
-                <small style={{color:'#007bff'}}>{ex.series} • {ex.carga}</small>
+                <small style={{color:'#007bff'}}>{ex.series || '0'} séries • {ex.carga || '0kg'}</small>
               </div>
             </div>
           </div>
         ))}
-        <h4 style={styles.titleSection}>Gerenciar Treinos</h4>
+        <h4 style={styles.titleSection}>Seus Treinos</h4>
         <div style={styles.addArea}>
-          <input value={novoNome} onChange={(e)=>setNovoNome(e.target.value)} placeholder="Novo Treino" style={styles.inputTreino}/>
+          <input value={novoNome} onChange={(e)=>setNovoNome(e.target.value)} placeholder="Ex: Treino A" style={styles.inputTreino}/>
           <button onClick={async ()=>{
             if(!novoNome) return;
-            const docRef = await addDoc(collection(db,"treinos"), {nome:novoNome, cicloId:cicloSelecionado.id, userId:user.uid, createdAt:new Date()});
-            if(!cicloSelecionado.ultimoTreinoId) await updateDoc(doc(db,"ciclos",cicloSelecionado.id), {ultimoTreinoId:docRef.id, ultimoTreinoNome:novoNome});
+            // CRIAÇÃO PADRONIZADA: cicloid minúsculo
+            const docRef = await addDoc(collection(db,"treinos"), {
+                nome: novoNome, 
+                cicloid: cicloSelecionado.id, 
+                userId: user.uid, 
+                createdAt: new Date()
+            });
+            if(!cicloSelecionado.ultimoTreinoId) {
+                await updateDoc(doc(db,"ciclos",cicloSelecionado.id), {
+                    ultimoTreinoId: docRef.id, 
+                    ultimoTreinoNome: novoNome
+                });
+            }
             setNovoNome('');
           }} style={styles.btnAdd}>+</button>
         </div>
@@ -173,6 +189,7 @@ function App() {
     </div>
   );
 
+  // TELA INICIAL (CICLOS)
   return (
     <div style={styles.containerMobile}>
       <header style={styles.header}>
@@ -182,10 +199,15 @@ function App() {
       <main style={styles.main}>
         <h2>Meus Ciclos</h2>
         <div style={styles.addArea}>
-          <input value={novoNome} onChange={(e)=>setNovoNome(e.target.value)} placeholder="Ex: Bulking" style={styles.inputTreino}/>
+          <input value={novoNome} onChange={(e)=>setNovoNome(e.target.value)} placeholder="Ex: Bulking / Definição" style={styles.inputTreino}/>
           <button onClick={async () => {
             if(!novoNome) return;
-            await addDoc(collection(db, "ciclos"), { nome: novoNome, userId: user.uid, createdAt: new Date(), ultimoTreinoNome: 'Nenhum' });
+            await addDoc(collection(db, "ciclos"), { 
+                nome: novoNome, 
+                userId: user.uid, 
+                createdAt: new Date(), 
+                ultimoTreinoNome: 'Nenhum' 
+            });
             setNovoNome('');
           }} style={styles.btnAdd}>+</button>
         </div>
@@ -203,26 +225,27 @@ function App() {
   );
 }
 
+// Estilos (mantidos para o layout não quebrar)
 const styles = {
   containerMobile: { maxWidth: '430px', minHeight: '100vh', margin: '0 auto', fontFamily: 'sans-serif', backgroundColor: '#F8F9FA', display: 'flex', flexDirection: 'column' },
   contentCenter: { display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', flex: 1 },
-  btnGoogle: { padding: '12px 24px', backgroundColor: '#fff', border: '1px solid #ddd', borderRadius: '30px', fontWeight:'bold' },
+  btnGoogle: { padding: '12px 24px', backgroundColor: '#fff', border: '1px solid #ddd', borderRadius: '30px', fontWeight:'bold', cursor: 'pointer' },
   header: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '15px 20px', backgroundColor: '#fff', borderBottom: '1px solid #EEE' },
   main: { flex: 1, padding: '20px' },
   addArea: { display: 'flex', gap: '10px', marginBottom: '20px' },
   inputTreino: { flex: 1, padding: '12px', borderRadius: '10px', border: '1px solid #DDD' },
-  btnAdd: { backgroundColor: '#007bff', color: 'white', border: 'none', width: '45px', borderRadius: '10px', fontSize: '20px' },
-  treinoCard: { padding: '15px', backgroundColor: '#fff', borderRadius: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' },
+  btnAdd: { backgroundColor: '#007bff', color: 'white', border: 'none', width: '45px', borderRadius: '10px', fontSize: '20px', cursor: 'pointer' },
+  treinoCard: { padding: '15px', backgroundColor: '#fff', borderRadius: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px', boxShadow: '0 2px 4px rgba(0,0,0,0.05)', cursor: 'pointer' },
   exerciseImg: { width: '50px', height: '50px', borderRadius: '8px', objectFit:'cover' },
-  btnAddSmall: { backgroundColor: '#28a745', color: 'white', border: 'none', width: '35px', height: '35px', borderRadius: '50%' },
-  btnBack: { border: 'none', background: 'none', color: '#007bff', fontWeight: 'bold' },
+  btnAddSmall: { backgroundColor: '#28a745', color: 'white', border: 'none', width: '35px', height: '35px', borderRadius: '50%', cursor: 'pointer' },
+  btnBack: { border: 'none', background: 'none', color: '#007bff', fontWeight: 'bold', cursor: 'pointer' },
   cardExecucao: { padding: '12px', backgroundColor: '#fff', borderRadius: '12px', marginBottom: '10px', border: '1px solid #EEE' },
   exerciseImgSmall: { width: '50px', height: '50px', borderRadius: '6px', objectFit:'cover' },
   rowInputs: { display: 'flex', gap: '8px', marginTop: '10px' },
   inputPequeno: { width: '100%', padding: '8px', border: '1px solid #eee', borderRadius: '6px', textAlign: 'center', fontSize: '14px' },
   cardTreinoDoDia: { background: '#1e293b', color: 'white', padding: '20px', borderRadius: '15px', marginBottom: '20px', textAlign: 'center' },
-  btnConcluir: { backgroundColor: '#10b981', color: 'white', border: 'none', padding: '12px', borderRadius: '10px', marginTop: '15px', fontWeight: 'bold', width: '100%' },
-  btnLogout: { color: 'red', border: 'none', background: 'none' },
+  btnConcluir: { backgroundColor: '#10b981', color: 'white', border: 'none', padding: '12px', borderRadius: '10px', marginTop: '15px', fontWeight: 'bold', width: '100%', cursor: 'pointer' },
+  btnLogout: { color: 'red', border: 'none', background: 'none', cursor: 'pointer' },
   titleSection: { borderLeft: '4px solid #007bff', paddingLeft: '10px', margin: '25px 0 10px', fontWeight: 'bold' }
 };
 
