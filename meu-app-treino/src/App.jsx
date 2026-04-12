@@ -3,7 +3,7 @@ import { auth, provider, db } from './firebase'
 import { signInWithPopup, signOut, onAuthStateChanged } from 'firebase/auth'
 import { 
   collection, addDoc, query, where, onSnapshot, 
-  orderBy, doc, deleteDoc, updateDoc, or 
+  doc, deleteDoc, updateDoc, or 
 } from 'firebase/firestore'
 import { bancoExercicios } from './bancoExercicios'
 
@@ -21,6 +21,7 @@ function App() {
   const [novoNome, setNovoNome] = useState('');
   const [busca, setBusca] = useState('');
 
+  // BUSCA DE OBJETIVOS/CICLOS
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
@@ -39,17 +40,25 @@ function App() {
     return () => unsub();
   }, []);
 
+  // BUSCA DE TREINOS (COM TRAVA PARA NÃO SUMIR)
   useEffect(() => {
     if (cicloSelecionado?.id) {
       const q = query(collection(db, "treinos"), where("cicloId", "==", cicloSelecionado.id));
-      onSnapshot(q, (snapshot) => {
+      const unsub = onSnapshot(q, (snapshot) => {
         const lista = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id }));
         lista.sort((a, b) => (a.createdAt?.seconds || 0) - (b.createdAt?.seconds || 0));
-        setMeusTreinos(lista);
+        
+        // Se a lista vier vazia mas a gente já tinha coisa na tela, ignora o "vazio" temporário do Firebase
+        setMeusTreinos(prev => {
+          if (lista.length === 0 && prev.length > 0) return prev;
+          return lista;
+        });
       });
+      return () => unsub();
     }
   }, [cicloSelecionado?.id]);
 
+  // BUSCA EXERCÍCIOS DO DIA (EXECUÇÃO)
   useEffect(() => {
     if (cicloSelecionado?.ultimoTreinoId) {
       const q = query(collection(db, "exercicios_treino"), where("treinoId", "==", cicloSelecionado.ultimoTreinoId));
@@ -57,6 +66,7 @@ function App() {
     }
   }, [cicloSelecionado?.ultimoTreinoId]);
 
+  // BUSCA EXERCÍCIOS PARA EDIÇÃO
   useEffect(() => {
     if (treinoSelecionado) {
       const q = query(collection(db, "exercicios_treino"), where("treinoId", "==", treinoSelecionado.id));
@@ -68,8 +78,10 @@ function App() {
     if (window.confirm("Tem certeza que deseja excluir?")) {
       try {
         await deleteDoc(doc(db, colecao, id));
+        // Se deletou um treino, remove da lista local também
+        if(colecao === "treinos") setMeusTreinos(prev => prev.filter(t => t.id !== id));
       } catch (err) {
-        alert("Erro: Você não tem permissão para excluir isso.");
+        alert("Erro de permissão.");
       }
     }
   };
@@ -89,6 +101,7 @@ function App() {
     </div></div>
   );
 
+  // TELA DE EDIÇÃO DE EXERCÍCIOS
   if (treinoSelecionado) return (
     <div style={styles.containerMobile}>
       <header style={styles.header}>
@@ -101,7 +114,7 @@ function App() {
             <div style={{display:'flex', alignItems:'center'}}>
               <img src={ex.foto} style={styles.exerciseImgSmall} alt=""/>
               <strong style={{flex:1, marginLeft:'10px'}}>{ex.nome}</strong>
-              <button onClick={() => handleDelete("exercicios_treino", ex.id)} style={{color:'red', border:'none', background:'none', cursor:'pointer'}}>✕</button>
+              <button onClick={() => handleDelete("exercicios_treino", ex.id)} style={{color:'red', border:'none', background:'none'}}>✕</button>
             </div>
             <div style={styles.rowInputs}>
               <input defaultValue={ex.series} onBlur={(e)=>updateDoc(doc(db, "exercicios_treino", ex.id), {series: e.target.value})} placeholder="Séries" style={styles.inputPequeno}/>
@@ -125,6 +138,7 @@ function App() {
     </div>
   );
 
+  // TELA DO CICLO (ONDE O BOTÃO ESTAVA SUMINDO)
   if (cicloSelecionado) return (
     <div style={styles.containerMobile}>
       <header style={styles.header}>
@@ -133,7 +147,7 @@ function App() {
       </header>
       <main style={styles.main}>
         <div style={styles.cardTreinoDoDia}>
-          <div style={{fontSize:'22px', fontWeight:'bold'}}>{cicloSelecionado.ultimoTreinoNome || "Crie um treino"}</div>
+          <div style={{fontSize:'22px', fontWeight:'bold'}}>{cicloSelecionado.ultimoTreinoNome || "Crie um treino abaixo"}</div>
           <button onClick={concluirTreinoDodia} style={styles.btnConcluir}>CONCLUIR TREINO ✓</button>
         </div>
 
@@ -149,7 +163,7 @@ function App() {
             {ex.obs && <p style={{fontSize:'12px', color:'#666', marginTop:'5px'}}>📝 {ex.obs}</p>}
             <div style={{display:'flex', gap:'15px', marginTop:'8px'}}>
               <small>Séries: <b>{ex.series}</b></small>
-              <small>Carga: <b>{ex.carga} kg</b></small>
+              <small>Peso: <b>{ex.carga}kg</b></small>
             </div>
           </div>
         ))}
@@ -161,12 +175,20 @@ function App() {
               <input value={novoNome} onChange={(e)=>setNovoNome(e.target.value)} placeholder="Ex: Treino A" style={styles.inputTreino}/>
               <button onClick={async () => {
                 if (!novoNome) return;
-                const docRef = await addDoc(collection(db, "treinos"), { nome: novoNome, cicloId: cicloSelecionado.id, userId: user.uid, createdAt: new Date() });
-                if (!cicloSelecionado.ultimoTreinoId) {
-                  await updateDoc(doc(db, "ciclos", cicloSelecionado.id), { ultimoTreinoId: docRef.id, ultimoTreinoNome: novoNome });
-                  setCicloSelecionado(prev => ({ ...prev, ultimoTreinoId: docRef.id, ultimoTreinoNome: novoNome }));
-                }
-                setNovoNome('');
+                const nomeFix = novoNome;
+                setNovoNome(''); 
+                try {
+                  const docRef = await addDoc(collection(db, "treinos"), { 
+                    nome: nomeFix, cicloId: cicloSelecionado.id, userId: user.uid, createdAt: new Date() 
+                  });
+                  // Adiciona na lista local NA HORA para não sumir
+                  setMeusTreinos(prev => [...prev, { id: docRef.id, nome: nomeFix, cicloId: cicloSelecionado.id }]);
+                  
+                  if (!cicloSelecionado.ultimoTreinoId) {
+                    await updateDoc(doc(db, "ciclos", cicloSelecionado.id), { ultimoTreinoId: docRef.id, ultimoTreinoNome: nomeFix });
+                    setCicloSelecionado(prev => ({ ...prev, ultimoTreinoId: docRef.id, ultimoTreinoNome: nomeFix }));
+                  }
+                } catch (e) { alert("Erro ao criar."); }
               }} style={styles.btnAdd}>+</button>
             </div>
             {meusTreinos.map(t => (
@@ -181,6 +203,7 @@ function App() {
     </div>
   );
 
+  // TELA INICIAL
   return (
     <div style={styles.containerMobile}>
       <header style={styles.header}>
@@ -190,12 +213,11 @@ function App() {
       <main style={styles.main}>
         <div style={styles.cardPersonal}>
           <h4 style={{margin:0, color:'#1976d2'}}>Área do Personal</h4>
-          <p style={{fontSize:'12px'}}>Vincule ao e-mail do aluno:</p>
-          <input value={emailAluno} onChange={(e)=>setEmailAluno(e.target.value)} placeholder="email@gmail.com" style={{...styles.inputTreino, width:'100%', boxSizing:'border-box', marginBottom:'5px'}}/>
+          <input value={emailAluno} onChange={(e)=>setEmailAluno(e.target.value)} placeholder="E-mail do Aluno" style={{...styles.inputTreino, width:'100%', boxSizing:'border-box', marginTop:'10px'}}/>
         </div>
-        <h2>Objetivos</h2>
+        <h2>Seus Objetivos</h2>
         <div style={styles.addArea}>
-          <input value={novoNome} onChange={(e)=>setNovoNome(e.target.value)} placeholder="Ex: Projeto Verão" style={styles.inputTreino}/>
+          <input value={novoNome} onChange={(e)=>setNovoNome(e.target.value)} placeholder="Ex: Treino Mensal" style={styles.inputTreino}/>
           <button onClick={async () => {
             if(!novoNome) return;
             await addDoc(collection(db, "ciclos"), { 
