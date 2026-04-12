@@ -3,7 +3,7 @@ import { auth, provider, db } from './firebase'
 import { signInWithPopup, signOut, onAuthStateChanged } from 'firebase/auth'
 import { 
   collection, addDoc, query, where, onSnapshot, 
-  doc, deleteDoc, updateDoc, or, serverTimestamp 
+  doc, deleteDoc, updateDoc, or 
 } from 'firebase/firestore'
 import { bancoExercicios } from './bancoExercicios'
 
@@ -19,7 +19,6 @@ function App() {
   const [novoNome, setNovoNome] = useState('');
   const [busca, setBusca] = useState('');
 
-  // 1. MONITOR DE LOGIN
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
@@ -28,7 +27,6 @@ function App() {
     return () => unsub();
   }, []);
 
-  // 2. BUSCA DE CICLOS (MEUS E RECEBIDOS)
   useEffect(() => {
     if (user) {
       const q = query(
@@ -44,7 +42,6 @@ function App() {
     }
   }, [user]);
 
-  // 3. BUSCA DE TREINOS DO CICLO
   useEffect(() => {
     if (cicloSelecionado?.id) {
       const q = query(collection(db, "treinos"), where("cicloId", "==", cicloSelecionado.id));
@@ -57,7 +54,6 @@ function App() {
     }
   }, [cicloSelecionado?.id]);
 
-  // 4. BUSCA EXERCÍCIOS DO DIA
   useEffect(() => {
     if (cicloSelecionado?.ultimoTreinoId) {
       const q = query(collection(db, "exercicios_treino"), where("treinoId", "==", cicloSelecionado.ultimoTreinoId));
@@ -68,7 +64,6 @@ function App() {
     }
   }, [cicloSelecionado?.ultimoTreinoId]);
 
-  // 5. BUSCA EXERCÍCIOS PARA EDIÇÃO
   useEffect(() => {
     if (treinoSelecionado?.id) {
       const q = query(collection(db, "exercicios_treino"), where("treinoId", "==", treinoSelecionado.id));
@@ -84,7 +79,7 @@ function App() {
       try {
         await deleteDoc(doc(db, colecao, id));
         if (cicloSelecionado?.id === id) setCicloSelecionado(null);
-      } catch (err) { alert("Erro ao excluir. Verifique permissões."); }
+      } catch (err) { alert("Erro ao excluir."); }
     }
   };
 
@@ -93,11 +88,9 @@ function App() {
     const indexAtual = meusTreinos.findIndex(t => t.id === cicloSelecionado.ultimoTreinoId);
     let proximoIndex = indexAtual + 1 >= meusTreinos.length ? 0 : indexAtual + 1;
     const proximoTreino = meusTreinos[proximoIndex];
-
     try {
       await updateDoc(doc(db, "ciclos", cicloSelecionado.id), { 
-        ultimoTreinoId: proximoTreino.id, 
-        ultimoTreinoNome: proximoTreino.nome 
+        ultimoTreinoId: proximoTreino.id, ultimoTreinoNome: proximoTreino.nome 
       });
       setCicloSelecionado(prev => ({...prev, ultimoTreinoId: proximoTreino.id, ultimoTreinoNome: proximoTreino.nome}));
       exerciciosDoDia.forEach(ex => updateDoc(doc(db, "exercicios_treino", ex.id), { concluido: false }));
@@ -110,12 +103,12 @@ function App() {
     </div></div>
   );
 
-  // TELA DE EDIÇÃO (PERSONAL)
+  // TELA DE EDIÇÃO (COM CAMPO DE OBSERVAÇÃO)
   if (treinoSelecionado) return (
     <div style={styles.containerMobile}>
       <header style={styles.header}>
         <button onClick={() => setTreinoSelecionado(null)} style={styles.btnBack}>← Salvar</button>
-        <h3>{treinoSelecionado.nome}</h3>
+        <h3>Editar: {treinoSelecionado.nome}</h3>
       </header>
       <main style={styles.main}>
         {exerciciosParaEditar.map(ex => (
@@ -129,13 +122,20 @@ function App() {
               <input defaultValue={ex.series} onBlur={(e)=>updateDoc(doc(db, "exercicios_treino", ex.id), {series: e.target.value})} placeholder="Séries" style={styles.inputPequeno}/>
               <input defaultValue={ex.carga} onBlur={(e)=>updateDoc(doc(db, "exercicios_treino", ex.id), {carga: e.target.value})} placeholder="Peso" style={styles.inputPequeno}/>
             </div>
+            {/* BARRA DE OBSERVAÇÕES PARA O PERSONAL ESCREVER */}
+            <textarea 
+              defaultValue={ex.obs || ""} 
+              onBlur={(e)=>updateDoc(doc(db, "exercicios_treino", ex.id), {obs: e.target.value})} 
+              placeholder="Dicas técnicas ou observações..." 
+              style={styles.textareaObs}
+            />
           </div>
         ))}
         <h4 style={styles.titleSection}>Adicionar Exercício</h4>
         <input placeholder="Buscar no banco..." value={busca} onChange={(e)=>setBusca(e.target.value)} style={styles.inputTreino}/>
-        <div style={{marginTop:'10px', maxHeight:'300px', overflowY:'auto'}}>
+        <div style={{marginTop:'10px', maxHeight:'250px', overflowY:'auto'}}>
           {bancoExercicios.filter(e => e.nome.toLowerCase().includes(busca.toLowerCase())).map(ex => (
-            <div key={ex.id} style={styles.treinoCard} onClick={() => addDoc(collection(db, "exercicios_treino"), { treinoId: treinoSelecionado.id, userId: user.uid, nome: ex.nome, foto: ex.foto, series: '3', carga: '10', concluido: false })}>
+            <div key={ex.id} style={styles.treinoCard} onClick={() => addDoc(collection(db, "exercicios_treino"), { treinoId: treinoSelecionado.id, userId: user.uid, nome: ex.nome, foto: ex.foto, series: '3', carga: '10', concluido: false, obs: "" })}>
                <span>{ex.nome}</span><button style={styles.btnAddSmall}>+</button>
             </div>
           ))}
@@ -144,7 +144,7 @@ function App() {
     </div>
   );
 
-  // TELA DO CICLO (ALUNO E PERSONAL)
+  // TELA DO CICLO (ONDE APARECE A OBSERVAÇÃO PARA O ALUNO)
   if (cicloSelecionado) return (
     <div style={styles.containerMobile}>
       <header style={styles.header}>
@@ -166,6 +166,10 @@ function App() {
               </div>
               <img src={ex.foto} style={styles.exerciseImgSmall} alt=""/>
             </div>
+            
+            {/* AQUI APARECE A OBSERVAÇÃO DURANTE O TREINO */}
+            {ex.obs && <div style={styles.labelObs}>📝 {ex.obs}</div>}
+
             <div style={{display:'flex', gap:'20px', marginTop:'8px'}}>
               <small>Séries: <b>{ex.series}</b></small>
               <small>Peso: <b>{ex.carga}kg</b></small>
@@ -177,7 +181,7 @@ function App() {
           <>
             <h4 style={styles.titleSection}>Configurar Ciclo</h4>
             <div style={styles.addArea}>
-              <input value={novoNome} onChange={(e)=>setNovoNome(e.target.value)} placeholder="Novo Treino (Ex: Costas)" style={styles.inputTreino}/>
+              <input value={novoNome} onChange={(e)=>setNovoNome(e.target.value)} placeholder="Novo Treino (Ex: Pernas)" style={styles.inputTreino}/>
               <button onClick={async () => {
                 if (!novoNome) return;
                 const docRef = await addDoc(collection(db, "treinos"), { nome: novoNome, cicloId: cicloSelecionado.id, userId: user.uid, createdAt: new Date() });
@@ -200,7 +204,6 @@ function App() {
     </div>
   );
 
-  // TELA INICIAL
   return (
     <div style={styles.containerMobile}>
       <header style={styles.header}>
@@ -228,7 +231,6 @@ function App() {
         <h2>Seus Ciclos</h2>
         {meusCiclos.map(c => {
           const souDono = c.userId === user.uid;
-          
           if (!souDono && c.status === "pendente") {
             return (
               <div key={c.id} style={styles.cardInvite}>
@@ -240,7 +242,6 @@ function App() {
               </div>
             );
           }
-
           return (
             <div key={c.id} style={{...styles.treinoCard, borderLeft: souDono ? '5px solid #007bff' : '5px solid #10b981'}} onClick={() => setCicloSelecionado(c)}>
               <div style={{ flex: 1 }}>
@@ -250,11 +251,7 @@ function App() {
               {souDono ? (
                  <button onClick={(e) => { e.stopPropagation(); handleDelete("ciclos", c.id); }} style={{ color: '#ff4444', border: 'none', background: 'none' }}>✕</button>
               ) : (
-                 <button onClick={(e) => { 
-                   e.stopPropagation(); 
-                   updateDoc(doc(db, "ciclos", c.id), {solicitacaoExclusao: true}); 
-                   alert("Solicitação de exclusão enviada!");
-                 }} style={{ fontSize:'12px', background:'#eee', border:'none', padding:'5px', borderRadius:'5px' }}>Pedir Exclusão</button>
+                 <button onClick={(e) => { e.stopPropagation(); updateDoc(doc(db, "ciclos", c.id), {solicitacaoExclusao: true}); alert("Solicitação enviada!"); }} style={{ fontSize:'12px', background:'#eee', border:'none', padding:'5px', borderRadius:'5px' }}>Pedir Exclusão</button>
               )}
             </div>
           );
@@ -287,7 +284,9 @@ const styles = {
   titleSection: { borderLeft: '4px solid #007bff', paddingLeft: '10px', margin: '25px 0 10px', fontWeight: 'bold' },
   cardInvite: { padding: '15px', backgroundColor: '#fff3e0', borderRadius: '12px', marginBottom: '10px', border: '1px solid #ffe0b2' },
   btnAceitar: { backgroundColor: '#28a745', color: 'white', border: 'none', padding: '8px 15px', borderRadius: '8px', cursor: 'pointer' },
-  btnRecusar: { backgroundColor: '#dc3545', color: 'white', border: 'none', padding: '8px 15px', borderRadius: '8px', cursor: 'pointer' }
+  btnRecusar: { backgroundColor: '#dc3545', color: 'white', border: 'none', padding: '8px 15px', borderRadius: '8px', cursor: 'pointer' },
+  textareaObs: { width: '100%', marginTop: '12px', padding: '10px', borderRadius: '8px', border: '1px solid #ddd', fontSize: '13px', resize: 'none', boxSizing: 'border-box', backgroundColor:'#f9f9f9', fontFamily:'sans-serif' },
+  labelObs: { fontSize: '12px', color: '#555', backgroundColor: '#fff8e1', padding: '8px', borderRadius: '6px', marginTop: '8px', borderLeft: '3px solid #ffc107' }
 };
 
 export default App;
