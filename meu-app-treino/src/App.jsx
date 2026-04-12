@@ -89,7 +89,6 @@ function App() {
     </div></div>
   );
 
-  // TELA DE EDIÇÃO (MODO PERSONAL)
   if (treinoSelecionado) return (
     <div style={styles.containerMobile}>
       <header style={styles.header}>
@@ -108,11 +107,11 @@ function App() {
               <input defaultValue={ex.series} onBlur={(e)=>updateDoc(doc(db, "exercicios_treino", ex.id), {series: e.target.value})} placeholder="Séries" style={styles.inputPequeno}/>
               <input defaultValue={ex.carga} onBlur={(e)=>updateDoc(doc(db, "exercicios_treino", ex.id), {carga: e.target.value})} placeholder="Peso" style={styles.inputPequeno}/>
             </div>
-            <textarea defaultValue={ex.obs} onBlur={(e)=>updateDoc(doc(db, "exercicios_treino", ex.id), {obs: e.target.value})} placeholder="Dicas/Observações..." style={styles.textareaObs}/>
+            <textarea defaultValue={ex.obs} onBlur={(e)=>updateDoc(doc(db, "exercicios_treino", ex.id), {obs: e.target.value})} placeholder="Dicas..." style={styles.textareaObs}/>
           </div>
         ))}
         <h4 style={styles.titleSection}>Adicionar Exercício</h4>
-        <input placeholder="Buscar exercício..." value={busca} onChange={(e)=>setBusca(e.target.value)} style={styles.inputTreino}/>
+        <input placeholder="Buscar..." value={busca} onChange={(e)=>setBusca(e.target.value)} style={styles.inputTreino}/>
         <div style={{marginTop:'10px', maxHeight:'250px', overflowY:'auto'}}>
           {bancoExercicios.filter(e => e.nome.toLowerCase().includes(busca.toLowerCase())).map(ex => (
             <div key={ex.id} style={styles.treinoCard} onClick={() => addDoc(collection(db, "exercicios_treino"), { treinoId: treinoSelecionado.id, userId: user.uid, nome: ex.nome, foto: ex.foto, series: '3', carga: '10', concluido: false })}>
@@ -126,7 +125,6 @@ function App() {
     </div>
   );
 
-  // TELA DO CICLO
   if (cicloSelecionado) return (
     <div style={styles.containerMobile}>
       <header style={styles.header}>
@@ -161,10 +159,13 @@ function App() {
             <h4 style={styles.titleSection}>Gerenciar Treinos</h4>
             <div style={styles.addArea}>
               <input value={novoNome} onChange={(e)=>setNovoNome(e.target.value)} placeholder="Ex: Treino A" style={styles.inputTreino}/>
-              <button onClick={async ()=>{
-                if(!novoNome) return;
-                const docRef = await addDoc(collection(db,"treinos"), { nome: novoNome, cicloId: cicloSelecionado.id, userId: user.uid, createdAt: new Date() });
-                if(!cicloSelecionado.ultimoTreinoId) await updateDoc(doc(db,"ciclos",cicloSelecionado.id), { ultimoTreinoId: docRef.id, ultimoTreinoNome: novoNome });
+              <button onClick={async () => {
+                if (!novoNome) return;
+                const docRef = await addDoc(collection(db, "treinos"), { nome: novoNome, cicloId: cicloSelecionado.id, userId: user.uid, createdAt: new Date() });
+                if (!cicloSelecionado.ultimoTreinoId) {
+                  await updateDoc(doc(db, "ciclos", cicloSelecionado.id), { ultimoTreinoId: docRef.id, ultimoTreinoNome: novoNome });
+                  setCicloSelecionado(prev => ({ ...prev, ultimoTreinoId: docRef.id, ultimoTreinoNome: novoNome }));
+                }
                 setNovoNome('');
               }} style={styles.btnAdd}>+</button>
             </div>
@@ -180,7 +181,6 @@ function App() {
     </div>
   );
 
-  // TELA INICIAL
   return (
     <div style={styles.containerMobile}>
       <header style={styles.header}>
@@ -190,11 +190,10 @@ function App() {
       <main style={styles.main}>
         <div style={styles.cardPersonal}>
           <h4 style={{margin:0, color:'#1976d2'}}>Área do Personal</h4>
-          <p style={{fontSize:'12px'}}>Vincule ao e-mail do aluno para compartilhar:</p>
-          <input value={emailAluno} onChange={(e)=>setEmailAluno(e.target.value)} placeholder="emaildoaluno@gmail.com" style={{...styles.inputTreino, width:'100%', boxSizing:'border-box', marginBottom:'5px'}}/>
+          <p style={{fontSize:'12px'}}>Vincule ao e-mail do aluno:</p>
+          <input value={emailAluno} onChange={(e)=>setEmailAluno(e.target.value)} placeholder="email@gmail.com" style={{...styles.inputTreino, width:'100%', boxSizing:'border-box', marginBottom:'5px'}}/>
         </div>
-
-        <h2>Seus Objetivos</h2>
+        <h2>Objetivos</h2>
         <div style={styles.addArea}>
           <input value={novoNome} onChange={(e)=>setNovoNome(e.target.value)} placeholder="Ex: Projeto Verão" style={styles.inputTreino}/>
           <button onClick={async () => {
@@ -206,7 +205,6 @@ function App() {
             setNovoNome(''); setEmailAluno('');
           }} style={styles.btnAdd}>+</button>
         </div>
-
         {meusCiclos.map(c => (
           <div key={c.id} style={{...styles.treinoCard, borderLeft: c.userId !== user.uid ? '5px solid #10b981' : '5px solid #007bff'}} onClick={() => setCicloSelecionado(c)}>
             <div style={{ flex: 1 }}>
