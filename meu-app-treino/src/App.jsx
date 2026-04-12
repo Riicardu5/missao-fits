@@ -25,15 +25,21 @@ function App() {
     const unsub = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
       if (currentUser) {
-        // BUSCA GLOBAL: Ciclos que eu criei OU ciclos onde sou o aluno
+        // Criamos uma query que pega TUDO onde você é o dono OU é o aluno
+        // Removi o orderBy momentaneamente para evitar erro de índice do Firebase
         const q = query(
           collection(db, "ciclos"), 
-          or(where("userId", "==", currentUser.uid), where("alunoEmail", "==", currentUser.email)),
-          orderBy("createdAt", "desc")
+          or(
+            where("userId", "==", currentUser.uid), 
+            where("alunoEmail", "==", currentUser.email.toLowerCase())
+          )
         );
         
         onSnapshot(q, (snapshot) => {
-          setMeusCiclos(snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id })));
+          // Ordenamos aqui no código mesmo para não dar erro no Firebase
+          const lista = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id }));
+          lista.sort((a, b) => b.createdAt?.seconds - a.createdAt?.seconds);
+          setMeusCiclos(lista);
         });
       }
     });
