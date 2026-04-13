@@ -74,6 +74,15 @@ function App() {
     }
   }, [treinoSelecionado]);
 
+  const moverTreino = async (index, direcao) => {
+    const novoIndex = index + direcao;
+    if (novoIndex < 0 || novoIndex >= meusTreinos.length) return;
+    const itemAtual = meusTreinos[index];
+    const itemTroca = meusTreinos[novoIndex];
+    await updateDoc(doc(db, "treinos", itemAtual.id), { ordem: itemTroca.ordem || 0 });
+    await updateDoc(doc(db, "treinos", itemTroca.id), { ordem: itemAtual.ordem || 0 });
+  };
+
   const salvarAlteracoesExercicio = async (ex, novaCarga, novaSerie, novaObs) => {
     if (window.confirm("Deseja salvar as alterações de peso/séries para este exercício?")) {
       const q = query(collection(db, "exercicios_treino"), where("nome", "==", ex.nome));
@@ -85,7 +94,7 @@ function App() {
           obs: novaObs || ""
         });
       });
-      alert("Alterações salvas em todos os treinos!");
+      alert("Alterações salvas!");
     }
   };
 
@@ -111,6 +120,7 @@ function App() {
     </div></div>
   );
 
+  // TELA DE EDIÇÃO DO TREINO (ADICIONAR/REMOVER EXERCÍCIOS)
   if (treinoSelecionado) return (
     <div style={styles.containerMobile}>
       <header style={styles.header}>
@@ -132,7 +142,7 @@ function App() {
             <div style={{display:'flex', alignItems:'center'}}>
               <img src={ex.foto} style={styles.exerciseImgSmall} alt=""/>
               <strong style={{flex:1, marginLeft:'10px'}}>{ex.nome}</strong>
-              <button onClick={(e) => { if(window.confirm("Remover este exercício?")) deleteDoc(doc(db, "exercicios_treino", ex.id)) }} style={{color:'red', border:'none', background:'none'}}>✕</button>
+              <button onClick={() => { if(window.confirm("Remover exercício?")) deleteDoc(doc(db, "exercicios_treino", ex.id)) }} style={{color:'red', border:'none', background:'none'}}>✕</button>
             </div>
           </div>
         ))}
@@ -156,6 +166,7 @@ function App() {
     </div>
   );
 
+  // TELA DO CICLO (TREINO DO DIA + LISTA DE TREINOS COM SETINHAS)
   if (cicloSelecionado) return (
     <div style={styles.containerMobile}>
       <header style={styles.header}>
@@ -164,7 +175,7 @@ function App() {
       </header>
       <main style={styles.main}>
         <div style={styles.cardTreinoDoDia}>
-          <div style={{fontSize:'18px', fontWeight:'bold'}}>{cicloSelecionado.ultimoTreinoNome || "Sem treino"}</div>
+          <div style={{fontSize:'18px', fontWeight:'bold'}}>{cicloSelecionado.ultimoTreinoNome || "Crie um treino abaixo"}</div>
           <button onClick={concluirTreinoDodia} style={styles.btnConcluir}>CONCLUIR TREINO ✓</button>
         </div>
 
@@ -181,17 +192,15 @@ function App() {
               <div style={{flex:1}}><label style={styles.labelInput}>Séries</label><input id={`s-${ex.id}`} defaultValue={ex.series} style={styles.inputPequeno}/></div>
               <div style={{flex:1}}><label style={styles.labelInput}>Peso (kg)</label><input id={`c-${ex.id}`} defaultValue={ex.carga} style={styles.inputPequeno}/></div>
             </div>
-            <button 
-              onClick={() => {
+            <button onClick={() => {
                 const s = document.getElementById(`s-${ex.id}`).value;
                 const c = document.getElementById(`c-${ex.id}`).value;
                 salvarAlteracoesExercicio(ex, c, s, ex.obs);
-              }} 
-              style={styles.btnSalvarMini}>Salvar Alterações</button>
+            }} style={styles.btnSalvarMini}>Salvar Alterações</button>
           </div>
         ))}
 
-        <h4 style={styles.titleSection}>Treinos do Ciclo</h4>
+        <h4 style={styles.titleSection}>Gerenciar Treinos</h4>
         <div style={styles.addArea}>
           <input value={novoNome} onChange={(e)=>setNovoNome(e.target.value)} placeholder="Novo Treino" style={styles.inputTreino}/>
           <button onClick={async () => {
@@ -203,12 +212,19 @@ function App() {
             }
           }} style={styles.btnAdd}>+</button>
         </div>
-        {meusTreinos.map((t) => (
-          <div key={t.id} style={styles.treinoCard} onClick={() => setTreinoSelecionado(t)}>
-            <span style={{flex:1}}>{t.nome}</span>
-            <button onClick={(e) => { e.stopPropagation(); if(window.confirm("Excluir treino?")) deleteDoc(doc(db, "treinos", t.id)) }} style={{color:'red', border:'none', background:'none'}}>✕</button>
-          </div>
-        ))}
+        
+        <div style={{marginTop: '15px'}}>
+          {meusTreinos.map((t, index) => (
+            <div key={t.id} style={styles.treinoCard} onClick={() => setTreinoSelecionado(t)}>
+              <div style={{display:'flex', flexDirection:'column', gap:'4px', marginRight:'12px'}}>
+                <button onClick={(e)=>{e.stopPropagation(); moverTreino(index, -1)}} style={styles.btnSeta}>▲</button>
+                <button onClick={(e)=>{e.stopPropagation(); moverTreino(index, 1)}} style={styles.btnSeta}>▼</button>
+              </div>
+              <span style={{flex:1, fontWeight:'bold'}}>{t.nome}</span>
+              <button onClick={(e) => { e.stopPropagation(); if(window.confirm("Excluir treino?")) deleteDoc(doc(db, "treinos", t.id)) }} style={{color:'red', border:'none', background:'none'}}>✕</button>
+            </div>
+          ))}
+        </div>
       </main>
     </div>
   );
@@ -257,6 +273,7 @@ const styles = {
   inputTreino: { flex: 1, padding: '12px', borderRadius: '10px', border: '1px solid #DDD', outline: 'none' },
   btnAdd: { backgroundColor: '#007bff', color: 'white', border: 'none', width: '45px', borderRadius: '10px', fontSize: '24px' },
   treinoCard: { padding: '15px', backgroundColor: '#fff', borderRadius: '12px', display: 'flex', alignItems: 'center', marginBottom: '10px', boxShadow: '0 2px 4px rgba(0,0,0,0.05)', cursor:'pointer' },
+  btnSeta: { background: '#f0f0f0', border: 'none', borderRadius: '4px', fontSize: '10px', cursor: 'pointer', padding: '2px 6px' },
   exerciseImgSmall: { width: '40px', height: '40px', borderRadius: '8px', objectFit:'cover' },
   btnAddSmall: { backgroundColor: '#28a745', color: 'white', border: 'none', width: '30px', height: '30px', borderRadius: '50%' },
   btnBack: { border: 'none', background: 'none', color: '#007bff', fontWeight: 'bold' },
