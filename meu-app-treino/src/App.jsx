@@ -84,7 +84,7 @@ function App() {
   const handleDelete = async (colecao, id) => {
     if (window.confirm("Excluir definitivamente?")) {
       await deleteDoc(doc(db, colecao, id));
-      if (cicloSelecionado?.id === id) setCicloSelecionado(null);
+      if (treinoSelecionado?.id === id) setTreinoSelecionado(null);
     }
   };
 
@@ -132,7 +132,7 @@ function App() {
           </div>
         ))}
         <h4 style={styles.titleSection}>Adicionar Exercício</h4>
-        <input placeholder="Buscar..." value={busca} onChange={(e)=>setBusca(e.target.value)} style={styles.inputTreino}/>
+        <input placeholder="Buscar no banco..." value={busca} onChange={(e)=>setBusca(e.target.value)} style={styles.inputTreino}/>
         <div style={{marginTop:'10px', maxHeight:'300px', overflowY:'auto'}}>
           {bancoExercicios.filter(e => e.nome.toLowerCase().includes(busca.toLowerCase())).map(ex => (
             <div key={ex.id} style={styles.treinoCard} onClick={async () => {
@@ -152,7 +152,7 @@ function App() {
     </div>
   );
 
-  // TELA DE TREINO (EXECUÇÃO + ORDENAÇÃO)
+  // TELA DE TREINO (EXECUÇÃO + LISTA DE TREINOS)
   if (cicloSelecionado) return (
     <div style={styles.containerMobile}>
       <header style={styles.header}>
@@ -161,7 +161,7 @@ function App() {
       </header>
       <main style={styles.main}>
         <div style={styles.cardTreinoDoDia}>
-          <div style={{fontSize:'20px', fontWeight:'bold'}}>{cicloSelecionado.ultimoTreinoNome || "Crie um treino"}</div>
+          <div style={{fontSize:'20px', fontWeight:'bold'}}>{cicloSelecionado.ultimoTreinoNome || "Aguardando treino..."}</div>
           <button onClick={concluirTreinoDodia} style={styles.btnConcluir}>CONCLUIR TREINO ✓</button>
         </div>
 
@@ -176,15 +176,15 @@ function App() {
             </div>
             <div style={styles.rowInputs}>
               <div style={{flex:1}}><label style={styles.labelInput}>Séries</label><input defaultValue={ex.series} onBlur={(e)=>atualizarExercicioGlobal(ex.nome, "series", e.target.value)} style={styles.inputPequeno}/></div>
-              <div style={{flex:1}}><label style={styles.labelInput}>Peso</label><input defaultValue={ex.carga} onBlur={(e)=>atualizarExercicioGlobal(ex.nome, "carga", e.target.value)} style={styles.inputPequeno}/></div>
+              <div style={{flex:1}}><label style={styles.labelInput}>Peso (kg)</label><input defaultValue={ex.carga} onBlur={(e)=>atualizarExercicioGlobal(ex.nome, "carga", e.target.value)} style={styles.inputPequeno}/></div>
             </div>
-            <textarea defaultValue={ex.obs || ""} onBlur={(e)=>atualizarExercicioGlobal(ex.nome, "obs", e.target.value)} placeholder="Notas..." style={styles.textareaObs}/>
+            <textarea defaultValue={ex.obs || ""} onBlur={(e)=>atualizarExercicioGlobal(ex.nome, "obs", e.target.value)} placeholder="Notas do treino..." style={styles.textareaObs}/>
           </div>
         ))}
 
-        <h4 style={styles.titleSection}>Gerenciar Treinos (Setas p/ Ordem)</h4>
+        <h4 style={styles.titleSection}>Gerenciar Treinos</h4>
         <div style={styles.addArea}>
-          <input value={novoNome} onChange={(e)=>setNovoNome(e.target.value)} placeholder="Ex: Treino A" style={styles.inputTreino}/>
+          <input value={novoNome} onChange={(e)=>setNovoNome(e.target.value)} placeholder="Nome: Treino A" style={styles.inputTreino}/>
           <button onClick={async () => {
             if (!novoNome) return;
             const docRef = await addDoc(collection(db, "treinos"), { 
@@ -197,13 +197,13 @@ function App() {
           }} style={styles.btnAdd}>+</button>
         </div>
         {meusTreinos.map((t, index) => (
-          <div key={t.id} style={styles.treinoCard} onClick={()=>setTreinoSelecionado(t)}>
+          <div key={t.id} style={styles.treinoCard} onClick={() => setTreinoSelecionado(t)}>
             <div style={{display:'flex', flexDirection:'column', gap:'4px', marginRight:'12px'}}>
               <button onClick={(e)=>{e.stopPropagation(); moverTreino(index, -1)}} style={styles.btnSeta}>▲</button>
               <button onClick={(e)=>{e.stopPropagation(); moverTreino(index, 1)}} style={styles.btnSeta}>▼</button>
             </div>
-            <span style={{flex:1}}>{t.nome}</span>
-            <button onClick={(e)=>{e.stopPropagation(); handleDelete("treinos", t.id)}} style={{color:'red', border:'none', background:'none', padding:'10px'}}>✕</button>
+            <span style={{flex:1, fontWeight:'bold'}}>{t.nome}</span>
+            <button onClick={(e)=>{e.stopPropagation(); handleDelete("treinos", t.id)}} style={{color:'red', border:'none', background:'none', padding:'5px'}}>✕</button>
           </div>
         ))}
       </main>
@@ -239,13 +239,15 @@ function App() {
           if (!souDono && c.status === "pendente") return (
             <div key={c.id} style={styles.cardInvite}>
               <p><b>{c.nome}</b> enviado para você.</p>
-              <button onClick={()=>updateDoc(doc(db, "ciclos", c.id), {status: "aceito"})} style={styles.btnAceitar}>Aceitar</button>
-              <button onClick={()=>handleDelete("ciclos", c.id)} style={styles.btnRecusar}>Recusar</button>
+              <div style={{display:'flex', gap:'10px'}}>
+                <button onClick={()=>updateDoc(doc(db, "ciclos", c.id), {status: "aceito"})} style={styles.btnAceitar}>Aceitar</button>
+                <button onClick={()=>handleDelete("ciclos", c.id)} style={styles.btnRecusar}>Recusar</button>
+              </div>
             </div>
           );
           return (
             <div key={c.id} style={{...styles.treinoCard, borderLeft: souDono ? '5px solid #007bff' : '5px solid #10b981'}} onClick={() => setCicloSelecionado(c)}>
-              <div style={{ flex: 1 }}><strong>{c.nome}</strong><br/><small>{souDono ? `Para: ${c.alunoEmail || 'Mim'}` : '⭐ Recebido'}</small></div>
+              <div style={{ flex: 1 }}><strong>{c.nome}</strong><br/><small>{souDono ? `Aluno: ${c.alunoEmail || 'Mim'}` : '⭐ Recebido'}</small></div>
               <button onClick={(e) => { e.stopPropagation(); handleDelete("ciclos", c.id); }} style={{ color: '#ff4444', border: 'none', background: 'none' }}>✕</button>
             </div>
           );
@@ -280,7 +282,7 @@ const styles = {
   btnLogout: { color: 'red', border: 'none', background: 'none' },
   titleSection: { borderLeft: '4px solid #007bff', paddingLeft: '10px', margin: '25px 0 10px', fontWeight: 'bold' },
   cardInvite: { padding: '15px', backgroundColor: '#fff3e0', borderRadius: '12px', marginBottom: '10px' },
-  btnAceitar: { backgroundColor: '#28a745', color: 'white', border: 'none', padding: '8px 15px', borderRadius: '8px', marginRight:'5px' },
+  btnAceitar: { backgroundColor: '#28a745', color: 'white', border: 'none', padding: '8px 15px', borderRadius: '8px' },
   btnRecusar: { backgroundColor: '#dc3545', color: 'white', border: 'none', padding: '8px 15px', borderRadius: '8px' },
   textareaObs: { width: '100%', marginTop: '10px', padding: '10px', borderRadius: '8px', border: '1px solid #ddd', fontSize: '13px', resize: 'none', boxSizing: 'border-box', backgroundColor: '#f9f9f9' }
 };
