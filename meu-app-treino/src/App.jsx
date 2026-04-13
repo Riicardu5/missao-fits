@@ -3,7 +3,7 @@ import { auth, provider, db } from './firebase'
 import { signInWithPopup, signOut, onAuthStateChanged } from 'firebase/auth'
 import { 
   collection, addDoc, query, where, onSnapshot, 
-  doc, deleteDoc, updateDoc, or, getDocs
+  doc, deleteDoc, updateDoc, or, getDocs, writeBatch
 } from 'firebase/firestore'
 import { bancoExercicios } from './bancoExercicios'
 
@@ -47,9 +47,9 @@ function App() {
       const q = query(collection(db, "treinos"), where("cicloId", "==", cicloSelecionado.id));
       const unsub = onSnapshot(q, (snapshot) => {
         const lista = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id }));
-        // Ordena garantindo que quem não tem ordem fica por último
-        lista.sort((a, b) => (Number(a.ordem) || 0) - (Number(b.ordem) || 0));
-        setMeusTreinos(lista);
+        // Ordenação rigorosa por número
+        const ordenada = lista.sort((a, b) => (Number(a.ordem) || 0) - (Number(b.ordem) || 0));
+        setMeusTreinos(ordenada);
       });
       return () => unsub();
     }
@@ -75,28 +75,30 @@ function App() {
     }
   }, [treinoSelecionado]);
 
-  // FUNÇÃO DAS SETAS CORRIGIDA
+  // NOVA LÓGICA DE MOVER: TROCA O INDEX REAL
   const moverTreino = async (index, direcao) => {
+    const novaLista = [...meusTreinos];
     const novoIndex = index + direcao;
-    if (novoIndex < 0 || novoIndex >= meusTreinos.length) return;
 
-    const itemAtual = meusTreinos[index];
-    const itemTroca = meusTreinos[novoIndex];
+    if (novoIndex < 0 || novoIndex >= novaLista.length) return;
 
-    // Pegamos os valores de ordem ou definimos como o próprio index se for nulo
-    const ordemAtual = itemAtual.ordem !== undefined ? Number(itemAtual.ordem) : index;
-    const ordemTroca = itemTroca.ordem !== undefined ? Number(itemTroca.ordem) : novoIndex;
+    // Troca os objetos de lugar no array local primeiro
+    const [removido] = novaLista.splice(index, 1);
+    novaLista.splice(novoIndex, 0, removido);
 
+    // Salva a nova ordem de TODOS para garantir que não haja conflito
     try {
-      await updateDoc(doc(db, "treinos", itemAtual.id), { ordem: ordemTroca });
-      await updateDoc(doc(db, "treinos", itemTroca.id), { ordem: ordemAtual });
+      for (let i = 0; i < novaLista.length; i++) {
+        const treinoRef = doc(db, "treinos", novaLista[i].id);
+        await updateDoc(treinoRef, { ordem: i });
+      }
     } catch (err) {
-      console.error("Erro ao mover:", err);
+      console.error("Erro ao reordenar:", err);
     }
   };
 
   const salvarAlteracoesExercicio = async (ex, novaCarga, novaSerie, novaObs) => {
-    if (window.confirm("Deseja salvar as alterações de peso/séries para este exercício?")) {
+    if (window.confirm("Deseja salvar as alterações?")) {
       const q = query(collection(db, "exercicios_treino"), where("nome", "==", ex.nome));
       const snap = await getDocs(q);
       snap.forEach((d) => {
@@ -106,13 +108,13 @@ function App() {
           obs: novaObs || ""
         });
       });
-      alert("Alterações salvas!");
+      alert("Salvo!");
     }
   };
 
   const concluirTreinoDodia = async () => {
     if (!cicloSelecionado || meusTreinos.length === 0) return;
-    if (window.confirm("Confirmar conclusão e ir para o próximo treino do ciclo?")) {
+    if (window.confirm("Ir para o próximo treino?")) {
       const indexAtual = meusTreinos.findIndex(t => t.id === cicloSelecionado.ultimoTreinoId);
       let proximoIndex = indexAtual + 1 >= meusTreinos.length ? 0 : indexAtual + 1;
       const proximoTreino = meusTreinos[proximoIndex];
@@ -140,7 +142,7 @@ function App() {
             <input id="editNomeTreino" defaultValue={treinoSelecionado.nome} style={styles.inputTreino}/>
             <button onClick={() => {
                 const novo = document.getElementById('editNomeTreino').value;
-                if(window.confirm("Salvar novo nome do treino?")) {
+                if(window.confirm("Salvar nome?")) {
                     updateDoc(doc(db, "treinos", treinoSelecionado.id), { nome: novo });
                     if(cicloSelecionado.ultimoTreinoId === treinoSelecionado.id) updateDoc(doc(db, "ciclos", cicloSelecionado.id), { ultimoTreinoNome: novo });
                 }
@@ -153,7 +155,7 @@ function App() {
             <div style={{display:'flex', alignItems:'center'}}>
               <img src={ex.foto} style={styles.exerciseImgSmall} alt=""/>
               <strong style={{flex:1, marginLeft:'10px'}}>{ex.nome}</strong>
-              <button onClick={() => { if(window.confirm("Remover exercício?")) deleteDoc(doc(db, "exercicios_treino", ex.id)) }} style={{color:'red', border:'none', background:'none'}}>✕</button>
+              <button onClick={() => { if(window.confirm("Remover?")) deleteDoc(doc(db, "exercicios_treino", ex.id)) }} style={{color:'red', border:'none', background:'none'}}>✕</button>
             </div>
           </div>
         ))}
@@ -185,7 +187,7 @@ function App() {
       </header>
       <main style={styles.main}>
         <div style={styles.cardTreinoDoDia}>
-          <div style={{fontSize:'18px', fontWeight:'bold'}}>{cicloSelecionado.ultimoTreinoNome || "Crie um treino abaixo"}</div>
+          <div style={{fontSize:'18px', fontWeight:'bold'}}>{cicloSelecionado.ultimoTreinoNome || "Crie um treino"}</div>
           <button onClick={concluirTreinoDodia} style={styles.btnConcluir}>CONCLUIR TREINO ✓</button>
         </div>
 
@@ -215,13 +217,9 @@ function App() {
           <input value={novoNome} onChange={(e)=>setNovoNome(e.target.value)} placeholder="Novo Treino" style={styles.inputTreino}/>
           <button onClick={async () => {
             if (!novoNome) return;
-            if (window.confirm("Criar novo treino?")) {
-              // Ao criar, já define a ordem como o fim da lista
+            if (window.confirm("Criar treino?")) {
               const docRef = await addDoc(collection(db, "treinos"), { 
-                nome: novoNome, 
-                cicloId: cicloSelecionado.id, 
-                userId: user.uid, 
-                ordem: meusTreinos.length 
+                nome: novoNome, cicloId: cicloSelecionado.id, userId: user.uid, ordem: meusTreinos.length 
               });
               if (!cicloSelecionado.ultimoTreinoId) await updateDoc(doc(db, "ciclos", cicloSelecionado.id), { ultimoTreinoId: docRef.id, ultimoTreinoNome: novoNome });
               setNovoNome('');
@@ -237,7 +235,7 @@ function App() {
                 <button onClick={(e)=>{e.stopPropagation(); moverTreino(index, 1)}} style={styles.btnSeta}>▼</button>
               </div>
               <span style={{flex:1, fontWeight:'bold'}}>{t.nome}</span>
-              <button onClick={(e) => { e.stopPropagation(); if(window.confirm("Excluir treino?")) deleteDoc(doc(db, "treinos", t.id)) }} style={{color:'red', border:'none', background:'none'}}>✕</button>
+              <button onClick={(e) => { e.stopPropagation(); if(window.confirm("Excluir?")) deleteDoc(doc(db, "treinos", t.id)) }} style={{color:'red', border:'none', background:'none'}}>✕</button>
             </div>
           ))}
         </div>
@@ -259,7 +257,7 @@ function App() {
             <input value={novoNome} onChange={(e)=>setNovoNome(e.target.value)} placeholder="Nome do Ciclo" style={styles.inputTreino}/>
             <button onClick={async () => {
               if(!novoNome) return;
-              if(window.confirm("Criar este ciclo?")) {
+              if(window.confirm("Criar ciclo?")) {
                 await addDoc(collection(db, "ciclos"), { nome: novoNome, userId: user.uid, createdAt: new Date(), alunoEmail: emailAluno.toLowerCase().trim(), status: emailAluno ? "pendente" : "aceito" });
                 setNovoNome(''); setEmailAluno('');
               }
@@ -270,7 +268,7 @@ function App() {
         {meusCiclos.map(c => (
           <div key={c.id} style={styles.treinoCard} onClick={() => setCicloSelecionado(c)}>
             <div style={{ flex: 1 }}><strong>{c.nome}</strong></div>
-            <button onClick={(e) => { e.stopPropagation(); if(window.confirm("Excluir ciclo?")) deleteDoc(doc(db, "ciclos", c.id)) }} style={{ color: 'red', border: 'none', background: 'none' }}>✕</button>
+            <button onClick={(e) => { e.stopPropagation(); if(window.confirm("Excluir?")) deleteDoc(doc(db, "ciclos", c.id)) }} style={{ color: 'red', border: 'none', background: 'none' }}>✕</button>
           </div>
         ))}
       </main>
