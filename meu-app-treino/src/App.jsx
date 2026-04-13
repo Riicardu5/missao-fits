@@ -3,7 +3,7 @@ import { auth, provider, db } from './firebase'
 import { signInWithPopup, signOut, onAuthStateChanged } from 'firebase/auth'
 import { 
   collection, addDoc, query, where, onSnapshot, 
-  orderBy, doc, deleteDoc, updateDoc, getDocs, limit 
+  doc, deleteDoc, updateDoc, or, getDocs, orderBy 
 } from 'firebase/firestore'
 import { bancoExercicios } from './bancoExercicios'
 
@@ -11,127 +11,92 @@ function App() {
   const [user, setUser] = useState(null);
   const [cicloSelecionado, setCicloSelecionado] = useState(null);
   const [treinoSelecionado, setTreinoSelecionado] = useState(null);
-  
+  const [emailAluno, setEmailAluno] = useState(""); 
   const [meusCiclos, setMeusCiclos] = useState([]);
   const [meusTreinos, setMeusTreinos] = useState([]);
   const [exerciciosDoDia, setExerciciosDoDia] = useState([]);
   const [exerciciosParaEditar, setExerciciosParaEditar] = useState([]);
-  
   const [novoNome, setNovoNome] = useState('');
   const [busca, setBusca] = useState('');
 
-  // 1. Monitora o usuário
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
-      if (currentUser) {
-        const q = query(collection(db, "ciclos"), where("userId", "==", currentUser.uid), orderBy("createdAt", "desc"));
-        onSnapshot(q, (snapshot) => {
-          setMeusCiclos(snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id })));
-        });
-      }
+      if (!currentUser) setMeusCiclos([]);
     });
     return () => unsub();
   }, []);
 
-  // 2. Busca Treinos do Ciclo
+  useEffect(() => {
+    if (user) {
+      const q = query(
+        collection(db, "ciclos"), 
+        or(where("userId", "==", user.uid), where("alunoEmail", "==", user.email.toLowerCase()))
+      );
+      const unsub = onSnapshot(q, (snapshot) => {
+        const lista = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id }));
+        lista.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+        setMeusCiclos(lista);
+      });
+      return () => unsub();
+    }
+  }, [user]);
+
   useEffect(() => {
     if (cicloSelecionado?.id) {
-      const q = query(
-        collection(db, "treinos"), 
-        where("cicloId", "==", cicloSelecionado.id), 
-        orderBy("createdAt", "asc")
-      );
-      const unsubT = onSnapshot(q, (snapshot) => {
+      const q = query(collection(db, "treinos"), where("cicloId", "==", cicloSelecionado.id), orderBy("ordem", "asc"));
+      const unsub = onSnapshot(q, (snapshot) => {
         setMeusTreinos(snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id })));
       });
-      return () => unsubT();
+      return () => unsub();
     }
   }, [cicloSelecionado?.id]);
 
-  // 3. Busca Exercícios do Treino ATUAL do Ciclo (Treino do Dia)
   useEffect(() => {
     if (cicloSelecionado?.ultimoTreinoId) {
-      // Limpa a lista antes de buscar a nova para evitar o bug de "exercício antigo"
-      setExerciciosDoDia([]); 
       const q = query(collection(db, "exercicios_treino"), where("treinoId", "==", cicloSelecionado.ultimoTreinoId));
-      const unsubEx = onSnapshot(q, (snapshot) => {
-        setExerciciosDoDia(snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id })));
-      });
-      return () => unsubEx;
+      onSnapshot(q, (snapshot) => setExerciciosDoDia(snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id }))));
     }
-  }, [cicloSelecionado?.ultimoTreinoId]); // Se mudar o ID do treino do dia, ele refaz a busca
+  }, [cicloSelecionado?.ultimoTreinoId]);
 
-  // 4. Busca Exercícios para a tela de EDIÇÃO
   useEffect(() => {
-    if (treinoSelecionado) {
+    if (treinoSelecionado?.id) {
       const q = query(collection(db, "exercicios_treino"), where("treinoId", "==", treinoSelecionado.id));
-      const unsubEdit = onSnapshot(q, (snapshot) => {
-        setExerciciosParaEditar(snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id })));
-      });
-      return () => unsubEdit();
+      onSnapshot(q, (snapshot) => setExerciciosParaEditar(snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id }))));
     }
   }, [treinoSelecionado?.id]);
 
+  const atualizarExercicioGlobal = async (nomeExercicio, campo, valor) => {
+    const q = query(collection(db, "exercicios_treino"), where("nome", "==", nomeExercicio));
+    const snap = await getDocs(q);
+    snap.forEach((d) => updateDoc(doc(db, "exercicios_treino", d.id), { [campo]: valor }));
+  };
+
+  const moverTreino = async (index, direcao) => {
+    const novoIndex = index + direcao;
+    if (novoIndex < 0 || novoIndex >= meusTreinos.length) return;
+    const itemAtual = meusTreinos[index];
+    const itemTroca = meusTreinos[novoIndex];
+    await updateDoc(doc(db, "treinos", itemAtual.id), { ordem: itemTroca.ordem });
+    await updateDoc(doc(db, "treinos", itemTroca.id), { ordem: itemAtual.ordem });
+  };
+
+  const handleDelete = async (colecao, id) => {
+    if (window.confirm("Excluir definitivamente?")) {
+      await deleteDoc(doc(db, colecao, id));
+      if (cicloSelecionado?.id === id) setCicloSelecionado(null);
+    }
+  };
+
   const concluirTreinoDodia = async () => {
     if (!cicloSelecionado || meusTreinos.length === 0) return;
-    const index = meusTreinos.findIndex(t => t.id === cicloSelecionado.ultimoTreinoId);
-    let prox = index + 1 >= meusTreinos.length ? 0 : index + 1;
-    const proxT = meusTreinos[prox];
-
-    const novosDados = {
-      ultimoTreinoId: proxT.id,
-      ultimoTreinoNome: proxT.nome
-    };
-
-    await updateDoc(doc(db, "ciclos", cicloSelecionado.id), novosDados);
-    // Força o estado local a atualizar para o useEffect (Passo 3) disparar
-    setCicloSelecionado(prev => ({ ...prev, ...novosDados }));
-  };
-
-  // FUNÇÃO NOVA: Salva carga e busca se já existe em outro treino
-  const salvarDadosExercicio = async (id, campo, valor, nomeExercicio) => {
-    // 1. Atualiza o exercício atual
-    await updateDoc(doc(db, "exercicios_treino", id), { [campo]: valor });
-
-    // 2. Se for carga ou série, vamos tentar atualizar outros treinos com o mesmo nome (Opcional, mas ajuda)
-    // Aqui ele salva apenas no atual, mas na hora de ADICIONAR um novo, ele vai puxar o último.
-  };
-
-  const adicionarExercicioAoTreino = async (ex) => {
-    // Busca se você já usou esse exercício antes para puxar a última carga/série
-    const q = query(
-      collection(db, "exercicios_treino"), 
-      where("userId", "==", user.uid), 
-      where("nome", "==", ex.nome),
-      limit(1)
-    );
-    const snap = await getDocs(q);
-    let cargaAntiga = '';
-    let seriesAntiga = '';
-    
-    if (!snap.empty) {
-      cargaAntiga = snap.docs[0].data().carga;
-      seriesAntiga = snap.docs[0].data().series;
-    }
-
-    await addDoc(collection(db, "exercicios_treino"), {
-      treinoId: treinoSelecionado.id,
-      userId: user.uid,
-      nome: ex.nome,
-      foto: ex.foto,
-      series: seriesAntiga,
-      carga: cargaAntiga,
-      obs: ''
+    const indexAtual = meusTreinos.findIndex(t => t.id === cicloSelecionado.ultimoTreinoId);
+    let proximoIndex = indexAtual + 1 >= meusTreinos.length ? 0 : indexAtual + 1;
+    const proximoTreino = meusTreinos[proximoIndex];
+    await updateDoc(doc(db, "ciclos", cicloSelecionado.id), { 
+      ultimoTreinoId: proximoTreino.id, ultimoTreinoNome: proximoTreino.nome 
     });
-  };
-
-  const deletarItem = async (col, id) => {
-    if(window.confirm("Excluir definitivamente?")) {
-      try {
-        await deleteDoc(doc(db, col, id));
-      } catch (err) { console.error(err); }
-    }
+    exerciciosDoDia.forEach(ex => updateDoc(doc(db, "exercicios_treino", ex.id), { concluido: false }));
   };
 
   if (!user) return (
@@ -140,12 +105,21 @@ function App() {
     </div></div>
   );
 
-  // TELA DE EDIÇÃO DE TREINO
+  // TELA DE EDIÇÃO (ADICIONAR/REMOVER EXERCÍCIOS + RENOMEAR TREINO)
   if (treinoSelecionado) return (
     <div style={styles.containerMobile}>
       <header style={styles.header}>
-        <button onClick={() => setTreinoSelecionado(null)} style={styles.btnBack}>← Salvar e Voltar</button>
-        <h3 style={{margin:0}}>{treinoSelecionado.nome}</h3>
+        <button onClick={() => setTreinoSelecionado(null)} style={styles.btnBack}>← Salvar</button>
+        <input 
+          defaultValue={treinoSelecionado.nome} 
+          onBlur={(e) => {
+            updateDoc(doc(db, "treinos", treinoSelecionado.id), { nome: e.target.value });
+            if(cicloSelecionado.ultimoTreinoId === treinoSelecionado.id) {
+               updateDoc(doc(db, "ciclos", cicloSelecionado.id), { ultimoTreinoNome: e.target.value });
+            }
+          }}
+          style={styles.inputHeaderInvisible}
+        />
       </header>
       <main style={styles.main}>
         {exerciciosParaEditar.map(ex => (
@@ -153,28 +127,24 @@ function App() {
             <div style={{display:'flex', alignItems:'center'}}>
               <img src={ex.foto} style={styles.exerciseImgSmall} alt=""/>
               <strong style={{flex:1, marginLeft:'10px'}}>{ex.nome}</strong>
-              <button onClick={() => deletarItem("exercicios_treino", ex.id)} style={{color:'red', border:'none', background:'none'}}>✕</button>
+              <button onClick={() => handleDelete("exercicios_treino", ex.id)} style={{color:'red', border:'none', background:'none'}}>✕</button>
             </div>
-            <div style={styles.rowInputs}>
-              <input defaultValue={ex.series} onBlur={(e)=>salvarDadosExercicio(ex.id, "series", e.target.value, ex.nome)} placeholder="Séries" style={styles.inputPequeno}/>
-              <input defaultValue={ex.carga} onBlur={(e)=>salvarDadosExercicio(ex.id, "carga", e.target.value, ex.nome)} placeholder="Carga" style={styles.inputPequeno}/>
-            </div>
-            <textarea 
-              defaultValue={ex.obs} 
-              onBlur={(e)=>updateDoc(doc(db, "exercicios_treino", ex.id), {obs: e.target.value})}
-              placeholder="Observações (ex: banco inclinado...)" 
-              style={styles.textareaObs}
-            />
           </div>
         ))}
         <h4 style={styles.titleSection}>Adicionar Exercício</h4>
-        <input placeholder="Buscar no banco..." value={busca} onChange={(e)=>setBusca(e.target.value)} style={styles.inputTreino}/>
-        <div style={{marginTop:'15px', maxHeight:'300px', overflowY:'auto'}}>
+        <input placeholder="Buscar..." value={busca} onChange={(e)=>setBusca(e.target.value)} style={styles.inputTreino}/>
+        <div style={{marginTop:'10px', maxHeight:'300px', overflowY:'auto'}}>
           {bancoExercicios.filter(e => e.nome.toLowerCase().includes(busca.toLowerCase())).map(ex => (
-            <div key={ex.id} style={styles.treinoCard}>
-              <img src={ex.foto} style={styles.exerciseImg} alt=""/>
-              <div style={{flex:1, marginLeft:'10px'}}><small>{ex.nome}</small></div>
-              <button onClick={()=>adicionarExercicioAoTreino(ex)} style={styles.btnAddSmall}>+</button>
+            <div key={ex.id} style={styles.treinoCard} onClick={async () => {
+              const q = query(collection(db, "exercicios_treino"), where("nome", "==", ex.nome));
+              const snap = await getDocs(q);
+              const data = snap.empty ? {carga:'10', series:'3'} : snap.docs[0].data();
+              addDoc(collection(db, "exercicios_treino"), { 
+                treinoId: treinoSelecionado.id, userId: user.uid, nome: ex.nome, 
+                foto: ex.foto, series: data.series, carga: data.carga, concluido: false, obs: "" 
+              });
+            }}>
+               <span>{ex.nome}</span><button style={styles.btnAddSmall}>+</button>
             </div>
           ))}
         </div>
@@ -182,70 +152,64 @@ function App() {
     </div>
   );
 
-  // TELA DO CICLO (TREINO DO DIA)
+  // TELA DE TREINO (EXECUÇÃO + ORDENAÇÃO)
   if (cicloSelecionado) return (
     <div style={styles.containerMobile}>
       <header style={styles.header}>
-        <button onClick={() => setCicloSelecionado(null)} style={styles.btnBack}>← Ciclos</button>
+        <button onClick={() => setCicloSelecionado(null)} style={styles.btnBack}>← Voltar</button>
         <h3 style={{margin:0}}>{cicloSelecionado.nome}</h3>
       </header>
       <main style={styles.main}>
         <div style={styles.cardTreinoDoDia}>
-          <small>PRÓXIMO TREINO</small>
-          <div style={{fontSize:'22px', fontWeight:'bold'}}>{cicloSelecionado.ultimoTreinoNome || "Crie um treino"}</div>
+          <div style={{fontSize:'20px', fontWeight:'bold'}}>{cicloSelecionado.ultimoTreinoNome || "Crie um treino"}</div>
           <button onClick={concluirTreinoDodia} style={styles.btnConcluir}>CONCLUIR TREINO ✓</button>
         </div>
 
-        {exerciciosDoDia.length === 0 && <p style={{textAlign:'center', color:'#999'}}>Nenhum exercício neste treino.</p>}
-
         {exerciciosDoDia.map(ex => (
-          <div key={ex.id} style={styles.cardExecucao}>
-            <div style={{display:'flex', alignItems:'center'}}>
-              <img src={ex.foto} style={styles.exerciseImgSmall} alt=""/>
-              <div style={{marginLeft:'10px'}}>
-                <strong>{ex.nome}</strong><br/>
-                <small style={{color:'#007bff'}}>{ex.series || '0'} séries • {ex.carga || '0kg'}</small>
-                {ex.obs && <div style={{fontSize:'12px', color:'#666', fontStyle:'italic'}}>Obs: {ex.obs}</div>}
+          <div key={ex.id} style={{...styles.cardExecucao, backgroundColor: ex.concluido ? '#e8f5e9' : '#fff'}}>
+            <div style={{display:'flex', alignItems:'center', justifyContent:'space-between'}}>
+              <div style={{display:'flex', alignItems:'center', gap:'10px'}}>
+                <input type="checkbox" checked={ex.concluido || false} onChange={(e) => updateDoc(doc(db, "exercicios_treino", ex.id), { concluido: e.target.checked })} style={{width:'22px', height:'22px'}}/>
+                <strong style={{textDecoration: ex.concluido ? 'line-through' : 'none'}}>{ex.nome}</strong>
               </div>
+              <img src={ex.foto} style={styles.exerciseImgSmall} alt=""/>
             </div>
+            <div style={styles.rowInputs}>
+              <div style={{flex:1}}><label style={styles.labelInput}>Séries</label><input defaultValue={ex.series} onBlur={(e)=>atualizarExercicioGlobal(ex.nome, "series", e.target.value)} style={styles.inputPequeno}/></div>
+              <div style={{flex:1}}><label style={styles.labelInput}>Peso</label><input defaultValue={ex.carga} onBlur={(e)=>atualizarExercicioGlobal(ex.nome, "carga", e.target.value)} style={styles.inputPequeno}/></div>
+            </div>
+            <textarea defaultValue={ex.obs || ""} onBlur={(e)=>atualizarExercicioGlobal(ex.nome, "obs", e.target.value)} placeholder="Notas..." style={styles.textareaObs}/>
           </div>
         ))}
-        
-        <h4 style={styles.titleSection}>Gerenciar Treinos</h4>
+
+        <h4 style={styles.titleSection}>Gerenciar Treinos (Setas p/ Ordem)</h4>
         <div style={styles.addArea}>
-          <input value={novoNome} onChange={(e)=>setNovoNome(e.target.value)} placeholder="Novo Treino (ex: Treino C)" style={styles.inputTreino}/>
-          <button onClick={async ()=>{
-            if(!novoNome) return;
-            const docRef = await addDoc(collection(db,"treinos"), {
-                nome: novoNome, 
-                cicloId: cicloSelecionado.id, 
-                userId: user.uid, 
-                createdAt: new Date()
+          <input value={novoNome} onChange={(e)=>setNovoNome(e.target.value)} placeholder="Ex: Treino A" style={styles.inputTreino}/>
+          <button onClick={async () => {
+            if (!novoNome) return;
+            const docRef = await addDoc(collection(db, "treinos"), { 
+              nome: novoNome, cicloId: cicloSelecionado.id, userId: user.uid, ordem: meusTreinos.length 
             });
-            if(!cicloSelecionado.ultimoTreinoId) {
-                await updateDoc(doc(db,"ciclos",cicloSelecionado.id), {
-                    ultimoTreinoId: docRef.id, 
-                    ultimoTreinoNome: novoNome
-                });
-                setCicloSelecionado(prev => ({...prev, ultimoTreinoId: docRef.id, ultimoTreinoNome: novoNome}));
+            if (!cicloSelecionado.ultimoTreinoId) {
+              await updateDoc(doc(db, "ciclos", cicloSelecionado.id), { ultimoTreinoId: docRef.id, ultimoTreinoNome: novoNome });
             }
             setNovoNome('');
           }} style={styles.btnAdd}>+</button>
         </div>
-
-        {meusTreinos.map(t => (
+        {meusTreinos.map((t, index) => (
           <div key={t.id} style={styles.treinoCard} onClick={()=>setTreinoSelecionado(t)}>
-            <strong>{t.nome}</strong>
-            <div onClick={(e)=>e.stopPropagation()}>
-               <button onClick={()=>deletarItem("treinos", t.id)} style={{color:'red', border:'none', background:'none', padding:'10px'}}>✕</button>
+            <div style={{display:'flex', flexDirection:'column', gap:'4px', marginRight:'12px'}}>
+              <button onClick={(e)=>{e.stopPropagation(); moverTreino(index, -1)}} style={styles.btnSeta}>▲</button>
+              <button onClick={(e)=>{e.stopPropagation(); moverTreino(index, 1)}} style={styles.btnSeta}>▼</button>
             </div>
+            <span style={{flex:1}}>{t.nome}</span>
+            <button onClick={(e)=>{e.stopPropagation(); handleDelete("treinos", t.id)}} style={{color:'red', border:'none', background:'none', padding:'10px'}}>✕</button>
           </div>
         ))}
       </main>
     </div>
   );
 
-  // TELA INICIAL (CICLOS)
   return (
     <div style={styles.containerMobile}>
       <header style={styles.header}>
@@ -253,56 +217,72 @@ function App() {
         <button onClick={() => signOut(auth)} style={styles.btnLogout}>Sair</button>
       </header>
       <main style={styles.main}>
-        <h2>Seus Objetivos</h2>
-        <div style={styles.addArea}>
-          <input value={novoNome} onChange={(e)=>setNovoNome(e.target.value)} placeholder="Ex: Bulking 2026" style={styles.inputTreino}/>
-          <button onClick={async () => {
-            if(!novoNome) return;
-            await addDoc(collection(db, "ciclos"), { 
-                nome: novoNome, 
-                userId: user.uid, 
-                createdAt: new Date(), 
-                ultimoTreinoNome: 'Nenhum' 
-            });
-            setNovoNome('');
-          }} style={styles.btnAdd}>+</button>
-        </div>
-        {meusCiclos.map(c => (
-          <div key={c.id} style={styles.treinoCard} onClick={() => setCicloSelecionado(c)}>
-            <div style={{ flex: 1 }}>
-              <strong>{c.nome}</strong><br/>
-              <small style={{ color: '#666' }}>Próximo: {c.ultimoTreinoNome}</small>
-            </div>
-            <button onClick={(e) => { e.stopPropagation(); deletarItem("ciclos", c.id); }} style={{ color: '#ff4444', border: 'none', background: 'none', fontSize: '18px' }}>✕</button>
+        <div style={styles.cardPersonal}>
+          <h4>Criar Novo Ciclo</h4>
+          <input value={emailAluno} onChange={(e)=>setEmailAluno(e.target.value)} placeholder="E-mail do Aluno" style={{...styles.inputTreino, width:'100%', marginBottom:'10px', boxSizing:'border-box'}}/>
+          <div style={styles.addArea}>
+            <input value={novoNome} onChange={(e)=>setNovoNome(e.target.value)} placeholder="Nome do Ciclo" style={styles.inputTreino}/>
+            <button onClick={async () => {
+              if(!novoNome) return;
+              await addDoc(collection(db, "ciclos"), { 
+                nome: novoNome, userId: user.uid, createdAt: new Date(), 
+                alunoEmail: emailAluno.toLowerCase().trim(), status: emailAluno ? "pendente" : "aceito" 
+              });
+              setNovoNome(''); setEmailAluno('');
+            }} style={styles.btnAdd}>+</button>
           </div>
-        ))}
+        </div>
+
+        <h2>Seus Ciclos</h2>
+        {meusCiclos.map(c => {
+          const souDono = c.userId === user.uid;
+          if (!souDono && c.status === "pendente") return (
+            <div key={c.id} style={styles.cardInvite}>
+              <p><b>{c.nome}</b> enviado para você.</p>
+              <button onClick={()=>updateDoc(doc(db, "ciclos", c.id), {status: "aceito"})} style={styles.btnAceitar}>Aceitar</button>
+              <button onClick={()=>handleDelete("ciclos", c.id)} style={styles.btnRecusar}>Recusar</button>
+            </div>
+          );
+          return (
+            <div key={c.id} style={{...styles.treinoCard, borderLeft: souDono ? '5px solid #007bff' : '5px solid #10b981'}} onClick={() => setCicloSelecionado(c)}>
+              <div style={{ flex: 1 }}><strong>{c.nome}</strong><br/><small>{souDono ? `Para: ${c.alunoEmail || 'Mim'}` : '⭐ Recebido'}</small></div>
+              <button onClick={(e) => { e.stopPropagation(); handleDelete("ciclos", c.id); }} style={{ color: '#ff4444', border: 'none', background: 'none' }}>✕</button>
+            </div>
+          );
+        })}
       </main>
     </div>
   );
 }
 
 const styles = {
-  containerMobile: { maxWidth: '430px', minHeight: '100vh', margin: '0 auto', fontFamily: 'sans-serif', backgroundColor: '#F8F9FA', display: 'flex', flexDirection: 'column' },
-  contentCenter: { display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', flex: 1 },
-  btnGoogle: { padding: '12px 24px', backgroundColor: '#fff', border: '1px solid #ddd', borderRadius: '30px', fontWeight:'bold', cursor: 'pointer' },
+  containerMobile: { maxWidth: '430px', minHeight: '100vh', margin: '0 auto', fontFamily: 'sans-serif', backgroundColor: '#F8F9FA' },
+  contentCenter: { display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '100vh' },
+  btnGoogle: { padding: '12px 24px', backgroundColor: '#fff', border: '1px solid #ddd', borderRadius: '30px', fontWeight:'bold' },
   header: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '15px 20px', backgroundColor: '#fff', borderBottom: '1px solid #EEE' },
-  main: { flex: 1, padding: '20px' },
-  addArea: { display: 'flex', gap: '10px', marginBottom: '20px' },
-  inputTreino: { flex: 1, padding: '12px', borderRadius: '10px', border: '1px solid #DDD' },
-  btnAdd: { backgroundColor: '#007bff', color: 'white', border: 'none', width: '45px', borderRadius: '10px', fontSize: '20px', cursor: 'pointer' },
-  treinoCard: { padding: '15px', backgroundColor: '#fff', borderRadius: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px', boxShadow: '0 2px 4px rgba(0,0,0,0.05)', cursor: 'pointer' },
-  exerciseImg: { width: '50px', height: '50px', borderRadius: '8px', objectFit:'cover' },
-  btnAddSmall: { backgroundColor: '#28a745', color: 'white', border: 'none', width: '35px', height: '35px', borderRadius: '50%', cursor: 'pointer' },
-  btnBack: { border: 'none', background: 'none', color: '#007bff', fontWeight: 'bold', cursor: 'pointer' },
-  cardExecucao: { padding: '12px', backgroundColor: '#fff', borderRadius: '12px', marginBottom: '10px', border: '1px solid #EEE' },
-  exerciseImgSmall: { width: '50px', height: '50px', borderRadius: '6px', objectFit:'cover' },
-  rowInputs: { display: 'flex', gap: '8px', marginTop: '10px' },
-  inputPequeno: { width: '100%', padding: '8px', border: '1px solid #eee', borderRadius: '6px', textAlign: 'center', fontSize: '14px' },
+  main: { padding: '20px' },
+  cardPersonal: { backgroundColor: '#e3f2fd', padding: '15px', borderRadius: '15px', marginBottom: '15px' },
+  addArea: { display: 'flex', gap: '10px' },
+  inputTreino: { flex: 1, padding: '12px', borderRadius: '10px', border: '1px solid #DDD', outline: 'none' },
+  inputHeaderInvisible: { border: 'none', fontSize: '18px', fontWeight: 'bold', outline: 'none', width: '70%', background: 'transparent' },
+  btnAdd: { backgroundColor: '#007bff', color: 'white', border: 'none', width: '45px', borderRadius: '10px', fontSize: '20px' },
+  treinoCard: { padding: '12px', backgroundColor: '#fff', borderRadius: '12px', display: 'flex', alignItems: 'center', marginBottom: '10px', boxShadow: '0 2px 4px rgba(0,0,0,0.05)', cursor:'pointer' },
+  btnSeta: { background: '#f0f0f0', border: 'none', borderRadius: '4px', fontSize: '10px', cursor: 'pointer', padding: '2px 6px' },
+  exerciseImgSmall: { width: '40px', height: '40px', borderRadius: '6px', objectFit:'cover' },
+  btnAddSmall: { backgroundColor: '#28a745', color: 'white', border: 'none', width: '30px', height: '30px', borderRadius: '50%' },
+  btnBack: { border: 'none', background: 'none', color: '#007bff', fontWeight: 'bold' },
+  cardExecucao: { padding: '15px', backgroundColor: '#fff', borderRadius: '15px', marginBottom: '10px', border: '1px solid #EEE' },
+  rowInputs: { display: 'flex', gap: '12px', marginTop: '12px' },
+  labelInput: { fontSize: '11px', color: '#888', display: 'block', marginBottom: '4px' },
+  inputPequeno: { width: '100%', padding: '10px', border: '1px solid #ddd', borderRadius: '8px', textAlign: 'center', fontWeight: 'bold' },
   cardTreinoDoDia: { background: '#1e293b', color: 'white', padding: '20px', borderRadius: '15px', marginBottom: '20px', textAlign: 'center' },
-  btnConcluir: { backgroundColor: '#10b981', color: 'white', border: 'none', padding: '12px', borderRadius: '10px', marginTop: '15px', fontWeight: 'bold', width: '100%', cursor: 'pointer' },
-  btnLogout: { color: 'red', border: 'none', background: 'none', cursor: 'pointer' },
+  btnConcluir: { backgroundColor: '#10b981', color: 'white', border: 'none', padding: '12px', borderRadius: '10px', marginTop: '15px', fontWeight: 'bold', width: '100%' },
+  btnLogout: { color: 'red', border: 'none', background: 'none' },
   titleSection: { borderLeft: '4px solid #007bff', paddingLeft: '10px', margin: '25px 0 10px', fontWeight: 'bold' },
-  textareaObs: { width: '100%', marginTop: '10px', padding: '8px', borderRadius: '6px', border: '1px solid #eee', fontSize: '13px', resize: 'none', boxSizing: 'border-box' }
+  cardInvite: { padding: '15px', backgroundColor: '#fff3e0', borderRadius: '12px', marginBottom: '10px' },
+  btnAceitar: { backgroundColor: '#28a745', color: 'white', border: 'none', padding: '8px 15px', borderRadius: '8px', marginRight:'5px' },
+  btnRecusar: { backgroundColor: '#dc3545', color: 'white', border: 'none', padding: '8px 15px', borderRadius: '8px' },
+  textareaObs: { width: '100%', marginTop: '10px', padding: '10px', borderRadius: '8px', border: '1px solid #ddd', fontSize: '13px', resize: 'none', boxSizing: 'border-box', backgroundColor: '#f9f9f9' }
 };
 
 export default App;
