@@ -1,6 +1,7 @@
 const imgEx = "https://www.svgrepo.com/show/335198/dumbbell.svg"; 
 const imgMusc = "https://www.svgrepo.com/show/157297/muscle.svg"; 
 
+
 export const bancoExercicios = [
   // --- PEITORAL ---
   { id: "sup_reto_barra", nome: "Supino Reto (Barra)", musculo: "Peito", foto: "https://fitnessprogramer.com/wp-content/uploads/2021/02/Barbell-Bench-Press.gif", musculoImg: imgMusc },
