@@ -3,7 +3,7 @@ import { auth, provider, db } from './firebase'
 import { signInWithPopup, signOut, onAuthStateChanged } from 'firebase/auth'
 import { 
   collection, addDoc, query, where, onSnapshot, 
-  doc, deleteDoc, updateDoc, or, getDocs, orderBy 
+  doc, deleteDoc, updateDoc, or, getDocs
 } from 'firebase/firestore'
 import { bancoExercicios } from './bancoExercicios'
 
@@ -19,6 +19,7 @@ function App() {
   const [novoNome, setNovoNome] = useState('');
   const [busca, setBusca] = useState('');
 
+  // 1. MONITOR DE LOGIN
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
@@ -30,7 +31,7 @@ function App() {
     return () => unsub();
   }, []);
 
-  // BUSCA CICLOS
+  // 2. BUSCA CICLOS DO USUÁRIO
   useEffect(() => {
     if (user) {
       const q = query(
@@ -39,25 +40,24 @@ function App() {
       );
       const unsub = onSnapshot(q, (snapshot) => {
         const lista = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id }));
-        lista.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
         setMeusCiclos(lista);
       });
       return () => unsub();
     }
   }, [user]);
 
-  // BUSCA TREINOS DO CICLO (AQUI ESTAVA O ERRO)
+  // 3. BUSCA TREINOS DO CICLO SELECIONADO (CORRIGIDO)
   useEffect(() => {
     if (cicloSelecionado?.id) {
-      console.log("Buscando treinos para o ciclo:", cicloSelecionado.id);
       const q = query(
         collection(db, "treinos"), 
-        where("cicloId", "==", cicloSelecionado.id),
-        orderBy("ordem", "asc")
+        where("cicloId", "==", cicloSelecionado.id)
       );
       const unsub = onSnapshot(q, (snapshot) => {
-        const listaTreinos = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id }));
-        setMeusTreinos(listaTreinos);
+        const lista = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id }));
+        // Ordenação manual para evitar erro de índice do Firebase
+        lista.sort((a, b) => (a.ordem || 0) - (b.ordem || 0));
+        setMeusTreinos(lista);
       });
       return () => unsub();
     } else {
@@ -65,7 +65,7 @@ function App() {
     }
   }, [cicloSelecionado]);
 
-  // BUSCA EXERCÍCIOS DO TREINO ATUAL (DIA)
+  // 4. BUSCA EXERCÍCIOS DO DIA (EXECUÇÃO)
   useEffect(() => {
     if (cicloSelecionado?.ultimoTreinoId) {
       const q = query(collection(db, "exercicios_treino"), where("treinoId", "==", cicloSelecionado.ultimoTreinoId));
@@ -74,11 +74,11 @@ function App() {
       });
       return () => unsub();
     } else {
-        setExerciciosDoDia([]);
+      setExerciciosDoDia([]);
     }
   }, [cicloSelecionado?.ultimoTreinoId]);
 
-  // BUSCA EXERCÍCIOS PARA EDIÇÃO
+  // 5. BUSCA EXERCÍCIOS PARA EDIÇÃO
   useEffect(() => {
     if (treinoSelecionado?.id) {
       const q = query(collection(db, "exercicios_treino"), where("treinoId", "==", treinoSelecionado.id));
@@ -95,18 +95,9 @@ function App() {
     snap.forEach((d) => updateDoc(doc(db, "exercicios_treino", d.id), { [campo]: valor }));
   };
 
-  const moverTreino = async (index, direcao) => {
-    const novoIndex = index + direcao;
-    if (novoIndex < 0 || novoIndex >= meusTreinos.length) return;
-    const itemAtual = meusTreinos[index];
-    const itemTroca = meusTreinos[novoIndex];
-    await updateDoc(doc(db, "treinos", itemAtual.id), { ordem: itemTroca.ordem });
-    await updateDoc(doc(db, "treinos", itemTroca.id), { ordem: itemAtual.ordem });
-  };
-
   const handleDeleteItem = async (colecao, id, e) => {
     if (e) e.stopPropagation();
-    if (window.confirm("Deseja excluir permanentemente?")) {
+    if (window.confirm("Deseja excluir?")) {
       await deleteDoc(doc(db, colecao, id));
       if (treinoSelecionado?.id === id) setTreinoSelecionado(null);
     }
@@ -129,21 +120,12 @@ function App() {
     </div></div>
   );
 
-  // TELA DE EDIÇÃO
+  // TELA 3: EDIÇÃO DE TREINO
   if (treinoSelecionado) return (
     <div style={styles.containerMobile}>
       <header style={styles.header}>
         <button onClick={() => setTreinoSelecionado(null)} style={styles.btnBack}>← Salvar</button>
-        <input 
-          defaultValue={treinoSelecionado.nome} 
-          onBlur={(e) => {
-            updateDoc(doc(db, "treinos", treinoSelecionado.id), { nome: e.target.value });
-            if(cicloSelecionado.ultimoTreinoId === treinoSelecionado.id) {
-               updateDoc(doc(db, "ciclos", cicloSelecionado.id), { ultimoTreinoNome: e.target.value });
-            }
-          }}
-          style={styles.inputHeaderInvisible}
-        />
+        <h3 style={{margin:0}}>{treinoSelecionado.nome}</h3>
       </header>
       <main style={styles.main}>
         {exerciciosParaEditar.map(ex => (
@@ -160,12 +142,9 @@ function App() {
         <div style={{marginTop:'10px', maxHeight:'300px', overflowY:'auto'}}>
           {bancoExercicios.filter(e => e.nome.toLowerCase().includes(busca.toLowerCase())).map(ex => (
             <div key={ex.id} style={styles.treinoCard} onClick={async () => {
-              const q = query(collection(db, "exercicios_treino"), where("nome", "==", ex.nome));
-              const snap = await getDocs(q);
-              const data = snap.empty ? {carga:'10', series:'3'} : snap.docs[0].data();
               addDoc(collection(db, "exercicios_treino"), { 
                 treinoId: treinoSelecionado.id, userId: user.uid, nome: ex.nome, 
-                foto: ex.foto, series: data.series, carga: data.carga, concluido: false, obs: "" 
+                foto: ex.foto, series: "3", carga: "10", concluido: false, obs: "" 
               });
             }}>
                <span>{ex.nome}</span><button style={styles.btnAddSmall}>+</button>
@@ -176,7 +155,7 @@ function App() {
     </div>
   );
 
-  // TELA DO CICLO
+  // TELA 2: LISTA DE TREINOS E EXECUÇÃO
   if (cicloSelecionado) return (
     <div style={styles.containerMobile}>
       <header style={styles.header}>
@@ -185,15 +164,15 @@ function App() {
       </header>
       <main style={styles.main}>
         <div style={styles.cardTreinoDoDia}>
-          <div style={{fontSize:'20px', fontWeight:'bold'}}>{cicloSelecionado.ultimoTreinoNome || "Sem treino ativo"}</div>
+          <div style={{fontSize:'18px'}}>{cicloSelecionado.ultimoTreinoNome || "Crie um treino abaixo"}</div>
           <button onClick={concluirTreinoDodia} style={styles.btnConcluir}>CONCLUIR TREINO ✓</button>
         </div>
 
         {exerciciosDoDia.map(ex => (
           <div key={ex.id} style={{...styles.cardExecucao, backgroundColor: ex.concluido ? '#e8f5e9' : '#fff'}}>
-            <div style={{display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'10px'}}>
+            <div style={{display:'flex', alignItems:'center', justifyContent:'space-between'}}>
               <div style={{display:'flex', alignItems:'center', gap:'10px'}}>
-                <input type="checkbox" checked={ex.concluido || false} onChange={(e) => updateDoc(doc(db, "exercicios_treino", ex.id), { concluido: e.target.checked })} style={{width:'22px', height:'22px'}}/>
+                <input type="checkbox" checked={ex.concluido || false} onChange={(e) => updateDoc(doc(db, "exercicios_treino", ex.id), { concluido: e.target.checked })} style={{width:'20px', height:'20px'}}/>
                 <strong style={{textDecoration: ex.concluido ? 'line-through' : 'none'}}>{ex.nome}</strong>
               </div>
               <img src={ex.foto} style={styles.exerciseImgSmall} alt=""/>
@@ -202,41 +181,29 @@ function App() {
               <div style={{flex:1}}><label style={styles.labelInput}>Séries</label><input defaultValue={ex.series} onBlur={(e)=>atualizarExercicioGlobal(ex.nome, "series", e.target.value)} style={styles.inputPequeno}/></div>
               <div style={{flex:1}}><label style={styles.labelInput}>Peso (kg)</label><input defaultValue={ex.carga} onBlur={(e)=>atualizarExercicioGlobal(ex.nome, "carga", e.target.value)} style={styles.inputPequeno}/></div>
             </div>
-            <textarea defaultValue={ex.obs || ""} onBlur={(e)=>atualizarExercicioGlobal(ex.nome, "obs", e.target.value)} placeholder="Notas..." style={styles.textareaObs}/>
           </div>
         ))}
 
-        <h4 style={styles.titleSection}>Treinos cadastrados</h4>
+        <h4 style={styles.titleSection}>Treinos do Ciclo</h4>
         <div style={styles.addArea}>
           <input value={novoNome} onChange={(e)=>setNovoNome(e.target.value)} placeholder="Ex: Treino A" style={styles.inputTreino}/>
           <button onClick={async () => {
             if (!novoNome) return;
             const docRef = await addDoc(collection(db, "treinos"), { 
-              nome: novoNome, 
-              cicloId: cicloSelecionado.id, 
-              userId: user.uid, 
-              ordem: meusTreinos.length 
+              nome: novoNome, cicloId: cicloSelecionado.id, userId: user.uid, ordem: meusTreinos.length 
             });
-            // Se for o primeiro treino, define como o treino atual do ciclo
             if (!cicloSelecionado.ultimoTreinoId) {
-              await updateDoc(doc(db, "ciclos", cicloSelecionado.id), { 
-                ultimoTreinoId: docRef.id, 
-                ultimoTreinoNome: novoNome 
-              });
+              await updateDoc(doc(db, "ciclos", cicloSelecionado.id), { ultimoTreinoId: docRef.id, ultimoTreinoNome: novoNome });
             }
             setNovoNome('');
           }} style={styles.btnAdd}>+</button>
         </div>
         
         <div style={{marginTop: '15px'}}>
-          {meusTreinos.map((t, index) => (
+          {meusTreinos.map((t) => (
             <div key={t.id} style={styles.treinoCard} onClick={() => setTreinoSelecionado(t)}>
-              <div style={{display:'flex', flexDirection:'column', gap:'4px', marginRight:'12px'}}>
-                <button onClick={(e)=>{e.stopPropagation(); moverTreino(index, -1)}} style={styles.btnSeta}>▲</button>
-                <button onClick={(e)=>{e.stopPropagation(); moverTreino(index, 1)}} style={styles.btnSeta}>▼</button>
-              </div>
               <span style={{flex:1, fontWeight:'bold'}}>{t.nome}</span>
-              <button onClick={(e) => handleDeleteItem("treinos", t.id, e)} style={{color:'red', border:'none', background:'none', padding:'10px'}}>✕</button>
+              <button onClick={(e) => handleDeleteItem("treinos", t.id, e)} style={{color:'red', border:'none', background:'none'}}>✕</button>
             </div>
           ))}
         </div>
@@ -244,7 +211,7 @@ function App() {
     </div>
   );
 
-  // TELA INICIAL
+  // TELA 1: LISTA DE CICLOS
   return (
     <div style={styles.containerMobile}>
       <header style={styles.header}>
@@ -253,16 +220,15 @@ function App() {
       </header>
       <main style={styles.main}>
         <div style={styles.cardPersonal}>
-          <h4 style={{margin:0, color:'#1976d2'}}>Novo Ciclo</h4>
-          <input value={emailAluno} onChange={(e)=>setEmailAluno(e.target.value)} placeholder="E-mail do Aluno" style={{...styles.inputTreino, width:'100%', marginTop:'10px', boxSizing:'border-box'}}/>
-          <div style={{...styles.addArea, marginTop:'10px'}}>
+          <h4>Novo Ciclo</h4>
+          <input value={emailAluno} onChange={(e)=>setEmailAluno(e.target.value)} placeholder="E-mail do Aluno" style={{...styles.inputTreino, width:'100%', marginBottom:'10px', boxSizing:'border-box'}}/>
+          <div style={styles.addArea}>
             <input value={novoNome} onChange={(e)=>setNovoNome(e.target.value)} placeholder="Nome do Ciclo" style={styles.inputTreino}/>
             <button onClick={async () => {
               if(!novoNome) return;
               await addDoc(collection(db, "ciclos"), { 
                 nome: novoNome, userId: user.uid, createdAt: new Date(), 
-                alunoEmail: emailAluno.toLowerCase().trim(), status: emailAluno ? "pendente" : "aceito",
-                ultimoTreinoId: "", ultimoTreinoNome: ""
+                alunoEmail: emailAluno.toLowerCase().trim(), status: emailAluno ? "pendente" : "aceito" 
               });
               setNovoNome(''); setEmailAluno('');
             }} style={styles.btnAdd}>+</button>
@@ -270,24 +236,12 @@ function App() {
         </div>
 
         <h2>Meus Ciclos</h2>
-        {meusCiclos.map(c => {
-          const souDono = c.userId === user.uid;
-          if (!souDono && c.status === "pendente") return (
-            <div key={c.id} style={styles.cardInvite}>
-              <p><b>{c.nome}</b> enviado para você.</p>
-              <div style={{display:'flex', gap:'10px'}}>
-                <button onClick={()=>updateDoc(doc(db, "ciclos", c.id), {status: "aceito"})} style={styles.btnAceitar}>Aceitar</button>
-                <button onClick={(e)=>handleDeleteItem("ciclos", c.id, e)} style={styles.btnRecusar}>Recusar</button>
-              </div>
-            </div>
-          );
-          return (
-            <div key={c.id} style={{...styles.treinoCard, borderLeft: souDono ? '5px solid #007bff' : '5px solid #10b981'}} onClick={() => setCicloSelecionado(c)}>
-              <div style={{ flex: 1 }}><strong>{c.nome}</strong><br/><small>{souDono ? `Aluno: ${c.alunoEmail || 'Eu mesmo'}` : '⭐ Treino Recebido'}</small></div>
-              <button onClick={(e) => handleDeleteItem("ciclos", c.id, e)} style={{ color: '#ff4444', border: 'none', background: 'none' }}>✕</button>
-            </div>
-          );
-        })}
+        {meusCiclos.map(c => (
+          <div key={c.id} style={styles.treinoCard} onClick={() => setCicloSelecionado(c)}>
+            <div style={{ flex: 1 }}><strong>{c.nome}</strong></div>
+            <button onClick={(e) => handleDeleteItem("ciclos", c.id, e)} style={{ color: 'red', border: 'none', background: 'none' }}>✕</button>
+          </div>
+        ))}
       </main>
     </div>
   );
@@ -296,31 +250,25 @@ function App() {
 const styles = {
   containerMobile: { maxWidth: '430px', minHeight: '100vh', margin: '0 auto', fontFamily: 'sans-serif', backgroundColor: '#F8F9FA' },
   contentCenter: { display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '100vh' },
-  btnGoogle: { padding: '12px 24px', backgroundColor: '#fff', border: '1px solid #ddd', borderRadius: '30px', fontWeight:'bold', cursor:'pointer' },
+  btnGoogle: { padding: '12px 24px', backgroundColor: '#fff', border: '1px solid #ddd', borderRadius: '30px', fontWeight:'bold' },
   header: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '15px 20px', backgroundColor: '#fff', borderBottom: '1px solid #EEE' },
   main: { padding: '20px' },
-  cardPersonal: { backgroundColor: '#e3f2fd', padding: '15px', borderRadius: '15px', marginBottom: '15px', border: '1px solid #bbdefb' },
+  cardPersonal: { backgroundColor: '#e3f2fd', padding: '15px', borderRadius: '15px', marginBottom: '15px' },
   addArea: { display: 'flex', gap: '10px' },
   inputTreino: { flex: 1, padding: '12px', borderRadius: '10px', border: '1px solid #DDD', outline: 'none' },
-  inputHeaderInvisible: { border: 'none', fontSize: '18px', fontWeight: 'bold', outline: 'none', width: '70%', background: 'transparent' },
-  btnAdd: { backgroundColor: '#007bff', color: 'white', border: 'none', width: '45px', borderRadius: '10px', fontSize: '24px', cursor:'pointer' },
-  treinoCard: { padding: '12px', backgroundColor: '#fff', borderRadius: '12px', display: 'flex', alignItems: 'center', marginBottom: '10px', boxShadow: '0 2px 4px rgba(0,0,0,0.05)', cursor:'pointer' },
-  btnSeta: { background: '#f0f0f0', border: 'none', borderRadius: '4px', fontSize: '10px', cursor: 'pointer', padding: '2px 6px' },
-  exerciseImgSmall: { width: '45px', height: '45px', borderRadius: '8px', objectFit:'cover' },
-  btnAddSmall: { backgroundColor: '#28a745', color: 'white', border: 'none', width: '32px', height: '32px', borderRadius: '50%', cursor:'pointer' },
-  btnBack: { border: 'none', background: 'none', color: '#007bff', fontWeight: 'bold', cursor:'pointer' },
+  btnAdd: { backgroundColor: '#007bff', color: 'white', border: 'none', width: '45px', borderRadius: '10px', fontSize: '24px' },
+  treinoCard: { padding: '15px', backgroundColor: '#fff', borderRadius: '12px', display: 'flex', alignItems: 'center', marginBottom: '10px', boxShadow: '0 2px 4px rgba(0,0,0,0.05)', cursor:'pointer' },
+  exerciseImgSmall: { width: '40px', height: '40px', borderRadius: '8px', objectFit:'cover' },
+  btnAddSmall: { backgroundColor: '#28a745', color: 'white', border: 'none', width: '30px', height: '30px', borderRadius: '50%' },
+  btnBack: { border: 'none', background: 'none', color: '#007bff', fontWeight: 'bold' },
   cardExecucao: { padding: '15px', backgroundColor: '#fff', borderRadius: '15px', marginBottom: '12px', border: '1px solid #EEE' },
   rowInputs: { display: 'flex', gap: '12px', marginTop: '10px' },
-  labelInput: { fontSize: '11px', color: '#888', display: 'block', marginBottom: '4px' },
-  inputPequeno: { width: '100%', padding: '12px', border: '1px solid #ddd', borderRadius: '8px', textAlign: 'center', fontWeight: 'bold' },
-  cardTreinoDoDia: { background: '#1e293b', color: 'white', padding: '20px', borderRadius: '15px', marginBottom: '20px', textAlign: 'center' },
-  btnConcluir: { backgroundColor: '#10b981', color: 'white', border: 'none', padding: '14px', borderRadius: '12px', marginTop: '15px', fontWeight: 'bold', width: '100%', cursor:'pointer' },
-  btnLogout: { color: 'red', border: 'none', background: 'none', cursor:'pointer' },
-  titleSection: { borderLeft: '4px solid #007bff', paddingLeft: '10px', margin: '25px 0 10px', fontWeight: 'bold' },
-  cardInvite: { padding: '15px', backgroundColor: '#fff3e0', borderRadius: '12px', marginBottom: '10px', border: '1px solid #ffe0b2' },
-  btnAceitar: { backgroundColor: '#28a745', color: 'white', border: 'none', padding: '10px 18px', borderRadius: '8px', cursor:'pointer' },
-  btnRecusar: { backgroundColor: '#dc3545', color: 'white', border: 'none', padding: '10px 18px', borderRadius: '8px', cursor:'pointer' },
-  textareaObs: { width: '100%', marginTop: '12px', padding: '12px', borderRadius: '8px', border: '1px solid #ddd', fontSize: '14px', resize: 'none', boxSizing: 'border-box', backgroundColor: '#f9f9f9' }
+  labelInput: { fontSize: '11px', color: '#888', display: 'block' },
+  inputPequeno: { width: '100%', padding: '8px', border: '1px solid #ddd', borderRadius: '6px', textAlign: 'center', fontWeight: 'bold' },
+  cardTreinoDoDia: { background: '#1e293b', color: 'white', padding: '15px', borderRadius: '15px', marginBottom: '20px', textAlign: 'center' },
+  btnConcluir: { backgroundColor: '#10b981', color: 'white', border: 'none', padding: '10px', borderRadius: '8px', marginTop: '10px', fontWeight: 'bold', width: '100%' },
+  btnLogout: { color: 'red', border: 'none', background: 'none' },
+  titleSection: { borderLeft: '4px solid #007bff', paddingLeft: '10px', margin: '20px 0 10px', fontWeight: 'bold' }
 };
 
 export default App;
