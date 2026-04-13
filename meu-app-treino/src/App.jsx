@@ -47,7 +47,8 @@ function App() {
       const q = query(collection(db, "treinos"), where("cicloId", "==", cicloSelecionado.id));
       const unsub = onSnapshot(q, (snapshot) => {
         const lista = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id }));
-        lista.sort((a, b) => (a.ordem || 0) - (b.ordem || 0));
+        // Ordena garantindo que quem não tem ordem fica por último
+        lista.sort((a, b) => (Number(a.ordem) || 0) - (Number(b.ordem) || 0));
         setMeusTreinos(lista);
       });
       return () => unsub();
@@ -74,13 +75,24 @@ function App() {
     }
   }, [treinoSelecionado]);
 
+  // FUNÇÃO DAS SETAS CORRIGIDA
   const moverTreino = async (index, direcao) => {
     const novoIndex = index + direcao;
     if (novoIndex < 0 || novoIndex >= meusTreinos.length) return;
+
     const itemAtual = meusTreinos[index];
     const itemTroca = meusTreinos[novoIndex];
-    await updateDoc(doc(db, "treinos", itemAtual.id), { ordem: itemTroca.ordem || 0 });
-    await updateDoc(doc(db, "treinos", itemTroca.id), { ordem: itemAtual.ordem || 0 });
+
+    // Pegamos os valores de ordem ou definimos como o próprio index se for nulo
+    const ordemAtual = itemAtual.ordem !== undefined ? Number(itemAtual.ordem) : index;
+    const ordemTroca = itemTroca.ordem !== undefined ? Number(itemTroca.ordem) : novoIndex;
+
+    try {
+      await updateDoc(doc(db, "treinos", itemAtual.id), { ordem: ordemTroca });
+      await updateDoc(doc(db, "treinos", itemTroca.id), { ordem: ordemAtual });
+    } catch (err) {
+      console.error("Erro ao mover:", err);
+    }
   };
 
   const salvarAlteracoesExercicio = async (ex, novaCarga, novaSerie, novaObs) => {
@@ -120,7 +132,6 @@ function App() {
     </div></div>
   );
 
-  // TELA DE EDIÇÃO DO TREINO (ADICIONAR/REMOVER EXERCÍCIOS)
   if (treinoSelecionado) return (
     <div style={styles.containerMobile}>
       <header style={styles.header}>
@@ -166,7 +177,6 @@ function App() {
     </div>
   );
 
-  // TELA DO CICLO (TREINO DO DIA + LISTA DE TREINOS COM SETINHAS)
   if (cicloSelecionado) return (
     <div style={styles.containerMobile}>
       <header style={styles.header}>
@@ -206,7 +216,13 @@ function App() {
           <button onClick={async () => {
             if (!novoNome) return;
             if (window.confirm("Criar novo treino?")) {
-              const docRef = await addDoc(collection(db, "treinos"), { nome: novoNome, cicloId: cicloSelecionado.id, userId: user.uid, ordem: meusTreinos.length });
+              // Ao criar, já define a ordem como o fim da lista
+              const docRef = await addDoc(collection(db, "treinos"), { 
+                nome: novoNome, 
+                cicloId: cicloSelecionado.id, 
+                userId: user.uid, 
+                ordem: meusTreinos.length 
+              });
               if (!cicloSelecionado.ultimoTreinoId) await updateDoc(doc(db, "ciclos", cicloSelecionado.id), { ultimoTreinoId: docRef.id, ultimoTreinoNome: novoNome });
               setNovoNome('');
             }
