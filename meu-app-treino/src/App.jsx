@@ -81,7 +81,8 @@ function App() {
     await updateDoc(doc(db, "treinos", itemTroca.id), { ordem: itemAtual.ordem });
   };
 
-  const handleDelete = async (colecao, id) => {
+  const handleDeleteItem = async (colecao, id, e) => {
+    if(e) e.stopPropagation();
     if (window.confirm("Excluir definitivamente?")) {
       await deleteDoc(doc(db, colecao, id));
       if (treinoSelecionado?.id === id) setTreinoSelecionado(null);
@@ -105,7 +106,6 @@ function App() {
     </div></div>
   );
 
-  // TELA DE EDIÇÃO (ADICIONAR/REMOVER EXERCÍCIOS + RENOMEAR TREINO)
   if (treinoSelecionado) return (
     <div style={styles.containerMobile}>
       <header style={styles.header}>
@@ -127,7 +127,7 @@ function App() {
             <div style={{display:'flex', alignItems:'center'}}>
               <img src={ex.foto} style={styles.exerciseImgSmall} alt=""/>
               <strong style={{flex:1, marginLeft:'10px'}}>{ex.nome}</strong>
-              <button onClick={() => handleDelete("exercicios_treino", ex.id)} style={{color:'red', border:'none', background:'none'}}>✕</button>
+              <button onClick={() => handleDeleteItem("exercicios_treino", ex.id)} style={{color:'red', border:'none', background:'none'}}>✕</button>
             </div>
           </div>
         ))}
@@ -152,7 +152,6 @@ function App() {
     </div>
   );
 
-  // TELA DE TREINO (EXECUÇÃO + LISTA DE TREINOS)
   if (cicloSelecionado) return (
     <div style={styles.containerMobile}>
       <header style={styles.header}>
@@ -161,7 +160,7 @@ function App() {
       </header>
       <main style={styles.main}>
         <div style={styles.cardTreinoDoDia}>
-          <div style={{fontSize:'20px', fontWeight:'bold'}}>{cicloSelecionado.ultimoTreinoNome || "Aguardando treino..."}</div>
+          <div style={{fontSize:'20px', fontWeight:'bold'}}>{cicloSelecionado.ultimoTreinoNome || "Crie um treino abaixo"}</div>
           <button onClick={concluirTreinoDodia} style={styles.btnConcluir}>CONCLUIR TREINO ✓</button>
         </div>
 
@@ -192,6 +191,7 @@ function App() {
             });
             if (!cicloSelecionado.ultimoTreinoId) {
               await updateDoc(doc(db, "ciclos", cicloSelecionado.id), { ultimoTreinoId: docRef.id, ultimoTreinoNome: novoNome });
+              setCicloSelecionado(prev => ({...prev, ultimoTreinoId: docRef.id, ultimoTreinoNome: novoNome}));
             }
             setNovoNome('');
           }} style={styles.btnAdd}>+</button>
@@ -203,7 +203,7 @@ function App() {
               <button onClick={(e)=>{e.stopPropagation(); moverTreino(index, 1)}} style={styles.btnSeta}>▼</button>
             </div>
             <span style={{flex:1, fontWeight:'bold'}}>{t.nome}</span>
-            <button onClick={(e)=>{e.stopPropagation(); handleDelete("treinos", t.id)}} style={{color:'red', border:'none', background:'none', padding:'5px'}}>✕</button>
+            <button onClick={(e) => handleDeleteItem("treinos", t.id, e)} style={{color:'red', border:'none', background:'none', padding:'10px'}}>✕</button>
           </div>
         ))}
       </main>
@@ -218,9 +218,9 @@ function App() {
       </header>
       <main style={styles.main}>
         <div style={styles.cardPersonal}>
-          <h4>Criar Novo Ciclo</h4>
-          <input value={emailAluno} onChange={(e)=>setEmailAluno(e.target.value)} placeholder="E-mail do Aluno" style={{...styles.inputTreino, width:'100%', marginBottom:'10px', boxSizing:'border-box'}}/>
-          <div style={styles.addArea}>
+          <h4 style={{margin:0, color:'#1976d2'}}>Novo Ciclo</h4>
+          <input value={emailAluno} onChange={(e)=>setEmailAluno(e.target.value)} placeholder="E-mail do Aluno" style={{...styles.inputTreino, width:'100%', marginTop:'10px', boxSizing:'border-box'}}/>
+          <div style={{...styles.addArea, marginTop:'10px'}}>
             <input value={novoNome} onChange={(e)=>setNovoNome(e.target.value)} placeholder="Nome do Ciclo" style={styles.inputTreino}/>
             <button onClick={async () => {
               if(!novoNome) return;
@@ -241,14 +241,14 @@ function App() {
               <p><b>{c.nome}</b> enviado para você.</p>
               <div style={{display:'flex', gap:'10px'}}>
                 <button onClick={()=>updateDoc(doc(db, "ciclos", c.id), {status: "aceito"})} style={styles.btnAceitar}>Aceitar</button>
-                <button onClick={()=>handleDelete("ciclos", c.id)} style={styles.btnRecusar}>Recusar</button>
+                <button onClick={(e)=>handleDeleteItem("ciclos", c.id, e)} style={styles.btnRecusar}>Recusar</button>
               </div>
             </div>
           );
           return (
             <div key={c.id} style={{...styles.treinoCard, borderLeft: souDono ? '5px solid #007bff' : '5px solid #10b981'}} onClick={() => setCicloSelecionado(c)}>
-              <div style={{ flex: 1 }}><strong>{c.nome}</strong><br/><small>{souDono ? `Aluno: ${c.alunoEmail || 'Mim'}` : '⭐ Recebido'}</small></div>
-              <button onClick={(e) => { e.stopPropagation(); handleDelete("ciclos", c.id); }} style={{ color: '#ff4444', border: 'none', background: 'none' }}>✕</button>
+              <div style={{ flex: 1 }}><strong>{c.nome}</strong><br/><small>{souDono ? `Para: ${c.alunoEmail || 'Mim'}` : '⭐ Recebido'}</small></div>
+              <button onClick={(e) => handleDeleteItem("ciclos", c.id, e)} style={{ color: '#ff4444', border: 'none', background: 'none' }}>✕</button>
             </div>
           );
         })}
