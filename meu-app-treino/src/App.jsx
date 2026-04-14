@@ -121,23 +121,24 @@ function App() {
     alert("Ciclo clonado!");
   };
 
+  // ... (mantenha os imports e o resto do código acima igual)
+
   const salvarAlteracoesExercicio = async (ex, novaCarga, novaSerie, novaObs) => {
     if (window.confirm("Sincronizar pesos nesta conta?")) {
-      // 1. Define quem é o dono desse exercício específico
+      // FORÇANDO: Pega o e-mail do aluno do ciclo, se não tiver, usa o seu.
       const donoEmail = (cicloSelecionado?.alunoEmail && cicloSelecionado.alunoEmail.trim() !== "") 
                         ? cicloSelecionado.alunoEmail.toLowerCase().trim() 
                         : user.email.toLowerCase();
       
-      // 2. Atualiza o exercício atual
       await updateDoc(doc(db, "exercicios_treino", ex.id), { 
         carga: novaCarga, series: novaSerie, obs: novaObs || "", ownerEmail: donoEmail 
       });
 
-      // 3. Sincroniza apenas com exercícios do MESMO dono
+      // SINCRONIZAÇÃO SEGURA: Só busca exercícios onde o donoEmail seja EXATAMENTE o mesmo
       const q = query(
         collection(db, "exercicios_treino"), 
         where("nome", "==", ex.nome), 
-        where("ownerEmail", "==", donoEmail)
+        where("ownerEmail", "==", donoEmail) 
       );
       
       const snap = await getDocs(q);
@@ -148,10 +149,33 @@ function App() {
           });
         }
       });
-      alert("Peso sincronizado apenas para este perfil!");
+      alert("Sincronizado apenas para este perfil!");
     }
   };
 
+  // ... (no componente de edição de treino, ajuste o onClick de adicionar exercício):
+
+  // DENTRO DO RETURN (no filtro do bancoExercicios):
+  onClick={async () => {
+    if(window.confirm(`Adicionar ${ex.nome}?`)) {
+      // GARANTIA: Define o dono na hora da criação
+      const donoEmail = (cicloSelecionado?.alunoEmail && cicloSelecionado.alunoEmail.trim() !== "") 
+                        ? cicloSelecionado.alunoEmail.toLowerCase().trim() 
+                        : user.email.toLowerCase();
+
+      await addDoc(collection(db, "exercicios_treino"), { 
+        treinoId: treinoSelecionado.id, 
+        userId: user.uid, 
+        ownerEmail: donoEmail, // Aqui é o segredo!
+        nome: ex.nome, 
+        foto: ex.foto, 
+        series: "3", 
+        carga: "10", 
+        concluido: false, 
+        obs: "" 
+      });
+    }
+  }
   if (!user) return (
     <div style={styles.containerMobile}><div style={styles.contentCenter}>
       <h1>Missão Fits 💪</h1><button onClick={() => signInWithPopup(auth, provider)} style={styles.btnGoogle}>Entrar com Google</button>
