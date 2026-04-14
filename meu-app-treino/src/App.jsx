@@ -85,13 +85,13 @@ function App() {
     }
   };
 
-  // CORREÇÃO: AGORA FILTRA PELO SEU USERID PARA NÃO MUDAR O DE TERCEIROS
+  // CORREÇÃO: SINCRONIZA PELO DONO DO EXERCÍCIO (USERID DO OBJETO)
   const salvarAlteracoesExercicio = async (ex, novaCarga, novaSerie, novaObs) => {
-    if (window.confirm("Deseja salvar as alterações? Isso mudará o peso em todos os SEUS treinos.")) {
+    if (window.confirm("Salvar alterações? Isso mudará o peso em todos os treinos desta conta específica.")) {
       const q = query(
         collection(db, "exercicios_treino"), 
         where("nome", "==", ex.nome),
-        where("userId", "==", user.uid) // Trava de segurança: apenas os seus
+        where("userId", "==", ex.userId) // Muda conforme o dono do exercício, não necessariamente você
       );
       const snap = await getDocs(q);
       snap.forEach((d) => {
@@ -101,7 +101,7 @@ function App() {
           obs: novaObs || ""
         });
       });
-      alert("Atualizado apenas nos seus treinos!");
+      alert("Peso atualizado para esta conta!");
     }
   };
 
@@ -153,8 +153,17 @@ function App() {
           {bancoExercicios.filter(e => e.nome.toLowerCase().includes(busca.toLowerCase())).map(ex => (
             <div key={ex.id} style={styles.treinoCard} onClick={async () => {
               if(window.confirm(`Adicionar ${ex.nome}?`)) {
+                // Ao adicionar, o userId do exercício é o do ciclo (se for aluno, grava o id do aluno)
+                const donoId = cicloSelecionado.alunoEmail && cicloSelecionado.status === "aceito" 
+                    ? (cicloSelecionado.userId === user.uid ? "aluno_id_placeholder" : cicloSelecionado.userId) 
+                    : user.uid;
+                
+                // Se o criador for o personal, precisamos garantir que o exercício pertença ao contexto do ciclo
+                // Para simplificar: se o ciclo tem alunoEmail, o exercício pertence ao dono desse email
                 addDoc(collection(db, "exercicios_treino"), { 
-                  treinoId: treinoSelecionado.id, userId: user.uid, nome: ex.nome, 
+                  treinoId: treinoSelecionado.id, 
+                  userId: cicloSelecionado.userId, // Mantemos o vínculo com o criador do ciclo
+                  nome: ex.nome, 
                   foto: ex.foto, series: "3", carga: "10", concluido: false, obs: "" 
                 });
               }
@@ -238,7 +247,7 @@ function App() {
       <main style={styles.main}>
         <div style={styles.cardPersonal}>
           <h4>Novo Ciclo</h4>
-          <input value={emailAluno} onChange={(e)=>setEmailAluno(e.target.value)} placeholder="E-mail do Aluno" style={{...styles.inputTreino, width:'100%', marginBottom:'10px', boxSizing:'border-box'}}/>
+          <input value={emailAluno} onChange={(e)=>setEmailAluno(e.target.value)} placeholder="E-mail do Aluno (vazio para você)" style={{...styles.inputTreino, width:'100%', marginBottom:'10px', boxSizing:'border-box'}}/>
           <div style={styles.addArea}>
             <input value={novoNome} onChange={(e)=>setNovoNome(e.target.value)} placeholder="Nome do Ciclo" style={styles.inputTreino}/>
             <button onClick={async () => {
@@ -257,13 +266,18 @@ function App() {
         <h2>Meus Ciclos</h2>
         {meusCiclos.map(c => {
           const isPendente = c.alunoEmail === user.email.toLowerCase() && c.status === "pendente";
+          const eMeu = c.userId === user.uid && (!c.alunoEmail || c.alunoEmail === user.email.toLowerCase());
+          
           return (
             <div key={c.id} style={{...styles.treinoCard, border: isPendente ? '2px solid orange' : 'none'}} onClick={() => {
               if(!isPendente) setCicloSelecionado(c);
             }}>
               <div style={{ flex: 1 }}>
                 <strong>{c.nome}</strong>
-                {isPendente && <div style={{fontSize:'12px', color:'orange'}}>Convite Recebido</div>}
+                <div style={{fontSize:'10px', color:'#777'}}>
+                    {eMeu ? "● Meu Treino" : `● Aluno: ${c.alunoEmail}`}
+                </div>
+                {isPendente && <div style={{fontSize:'12px', color:'orange', fontWeight:'bold'}}>Convite Recebido</div>}
               </div>
               {isPendente ? (
                 <button onClick={(e) => { e.stopPropagation(); updateDoc(doc(db, "ciclos", c.id), { status: "aceito" }) }} style={styles.btnAceitar}>Aceitar</button>
