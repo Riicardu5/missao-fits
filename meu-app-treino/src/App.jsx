@@ -3,7 +3,7 @@ import { auth, provider, db } from './firebase'
 import { signInWithPopup, signOut, onAuthStateChanged } from 'firebase/auth'
 import { 
   collection, addDoc, query, where, onSnapshot, 
-  doc, deleteDoc, updateDoc, or, getDocs, orderBy
+  doc, deleteDoc, updateDoc, or, getDocs
 } from 'firebase/firestore'
 import { bancoExercicios } from './bancoExercicios'
 
@@ -32,7 +32,6 @@ function App() {
       const q = query(collection(db, "ciclos"), or(where("userId", "==", user.uid), where("alunoEmail", "==", user.email.toLowerCase())));
       const unsub = onSnapshot(q, (snapshot) => {
         const lista = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id }));
-        // Ordenação manual por campo 'ordem'
         lista.sort((a, b) => (Number(a.ordem) || 0) - (Number(b.ordem) || 0));
         setMeusCiclos(lista);
         if (cicloSelecionado) {
@@ -99,13 +98,8 @@ function App() {
   };
 
   const clonarCiclo = async (cicloOriginal) => {
-    const novoEmail = window.prompt("Para qual e-mail de aluno deseja clonar? (Deixe vazio para ser seu)", cicloOriginal.alunoEmail || "");
+    const novoEmail = window.prompt("E-mail do novo aluno (vazio p/ você):", cicloOriginal.alunoEmail || "");
     if (novoEmail === null) return;
-
-    const confirmacao = window.confirm(`Deseja clonar o ciclo "${cicloOriginal.nome}"?`);
-    if (!confirmacao) return;
-
-    // 1. Criar novo ciclo
     const novoCicloRef = await addDoc(collection(db, "ciclos"), {
       nome: cicloOriginal.nome + " (Cópia)",
       userId: user.uid,
@@ -114,36 +108,26 @@ function App() {
       createdAt: new Date(),
       ordem: meusCiclos.length
     });
-
-    // 2. Buscar treinos do original
     const treinosSnap = await getDocs(query(collection(db, "treinos"), where("cicloId", "==", cicloOriginal.id)));
-    
     for (const tDoc of treinosSnap.docs) {
       const tData = tDoc.data();
-      const novoTreinoRef = await addDoc(collection(db, "treinos"), {
-        ...tData,
-        cicloId: novoCicloRef.id,
-        userId: user.uid
-      });
-
-      // 3. Buscar exercícios desse treino
+      const novoTreinoRef = await addDoc(collection(db, "treinos"), { ...tData, cicloId: novoCicloRef.id, userId: user.uid });
       const exerciciosSnap = await getDocs(query(collection(db, "exercicios_treino"), where("treinoId", "==", tDoc.id)));
       for (const eDoc of exerciciosSnap.docs) {
         const eData = eDoc.data();
-        await addDoc(collection(db, "exercicios_treino"), {
-          ...eData,
-          treinoId: novoTreinoRef.id,
-          userId: user.uid,
-          ownerEmail: novoEmail.toLowerCase().trim() || user.email.toLowerCase()
-        });
+        await addDoc(collection(db, "exercicios_treino"), { ...eData, treinoId: novoTreinoRef.id, userId: user.uid, ownerEmail: novoEmail.toLowerCase().trim() || user.email.toLowerCase() });
       }
     }
-    alert("Ciclo clonado com sucesso!");
+    alert("Ciclo clonado!");
   };
 
   const salvarAlteracoesExercicio = async (ex, novaCarga, novaSerie, novaObs) => {
-    if (window.confirm("Salvar alterações para esta conta?")) {
-      const donoEmail = ex.ownerEmail || (cicloSelecionado?.alunoEmail ? cicloSelecionado.alunoEmail : user.email.toLowerCase());
+    if (window.confirm("Sincronizar pesos nesta conta?")) {
+      // FORÇA O DONO: se o ciclo tem aluno, o dono é o e-mail do aluno. Se não, é o seu e-mail.
+      const donoEmail = (cicloSelecionado?.alunoEmail && cicloSelecionado.alunoEmail !== "") 
+                        ? cicloSelecionado.alunoEmail 
+                        : user.email.toLowerCase();
+      
       await updateDoc(doc(db, "exercicios_treino", ex.id), { 
         carga: novaCarga, series: novaSerie, obs: novaObs || "", ownerEmail: donoEmail 
       });
@@ -157,24 +141,12 @@ function App() {
     }
   };
 
-  const concluirTreinoDodia = async () => {
-    if (!cicloSelecionado || meusTreinos.length === 0) return;
-    if (window.confirm("Ir para o próximo treino?")) {
-      const indexAtual = meusTreinos.findIndex(t => t.id === cicloSelecionado.ultimoTreinoId);
-      let proximoIndex = indexAtual + 1 >= meusTreinos.length ? 0 : indexAtual + 1;
-      const proximoTreino = meusTreinos[proximoIndex];
-      await updateDoc(doc(db, "ciclos", cicloSelecionado.id), { ultimoTreinoId: proximoTreino.id, ultimoTreinoNome: proximoTreino.nome });
-      exerciciosDoDia.forEach(ex => updateDoc(doc(db, "exercicios_treino", ex.id), { concluido: false }));
-    }
-  };
-
   if (!user) return (
     <div style={styles.containerMobile}><div style={styles.contentCenter}>
       <h1>Missão Fits 💪</h1><button onClick={() => signInWithPopup(auth, provider)} style={styles.btnGoogle}>Entrar com Google</button>
     </div></div>
   );
 
-  // TELA DE EDIÇÃO DE TREINO
   if (treinoSelecionado) return (
     <div style={styles.containerMobile}>
       <header style={styles.header}>
@@ -183,10 +155,9 @@ function App() {
             <input id="editNomeTreino" defaultValue={treinoSelecionado.nome} style={styles.inputTreino}/>
             <button onClick={() => {
                 const novo = document.getElementById('editNomeTreino').value;
-                if(window.confirm("Salvar nome?")) {
-                    updateDoc(doc(db, "treinos", treinoSelecionado.id), { nome: novo });
-                    if(cicloSelecionado.ultimoTreinoId === treinoSelecionado.id) updateDoc(doc(db, "ciclos", cicloSelecionado.id), { ultimoTreinoNome: novo });
-                }
+                updateDoc(doc(db, "treinos", treinoSelecionado.id), { nome: novo });
+                if(cicloSelecionado.ultimoTreinoId === treinoSelecionado.id) updateDoc(doc(db, "ciclos", cicloSelecionado.id), { ultimoTreinoNome: novo });
+                alert("Nome salvo!");
             }} style={{...styles.btnAdd, fontSize:'14px', width:'60px'}}>Salvar</button>
         </div>
       </header>
@@ -221,17 +192,16 @@ function App() {
     </div>
   );
 
-  // TELA DO CICLO
   if (cicloSelecionado) return (
     <div style={styles.containerMobile}>
       <header style={styles.header}>
         <button onClick={() => setCicloSelecionado(null)} style={styles.btnBack}>← Voltar</button>
         <input 
-          style={{...styles.inputTreino, border:'none', fontWeight:'bold', fontSize:'16px'}} 
+          style={{...styles.inputTreino, border:'1px solid #ddd', fontWeight:'bold', fontSize:'16px', marginLeft:'10px'}} 
           defaultValue={cicloSelecionado.nome}
           onBlur={(e) => {
             if(e.target.value !== cicloSelecionado.nome) {
-              updateDoc(doc(db, "ciclos", cicloSelecionado.id), { nome: e.target.value });
+                updateDoc(doc(db, "ciclos", cicloSelecionado.id), { nome: e.target.value });
             }
           }}
         />
@@ -239,7 +209,13 @@ function App() {
       <main style={styles.main}>
         <div style={styles.cardTreinoDoDia}>
           <div style={{fontSize:'18px', fontWeight:'bold'}}>{cicloSelecionado.ultimoTreinoNome || "Crie um treino"}</div>
-          <button onClick={concluirTreinoDodia} style={styles.btnConcluir}>CONCLUIR TREINO ✓</button>
+          <button onClick={async () => {
+             const indexAtual = meusTreinos.findIndex(t => t.id === cicloSelecionado.ultimoTreinoId);
+             let proximoIndex = indexAtual + 1 >= meusTreinos.length ? 0 : indexAtual + 1;
+             const proximoTreino = meusTreinos[proximoIndex];
+             await updateDoc(doc(db, "ciclos", cicloSelecionado.id), { ultimoTreinoId: proximoTreino.id, ultimoTreinoNome: proximoTreino.nome });
+             exerciciosDoDia.forEach(ex => updateDoc(doc(db, "exercicios_treino", ex.id), { concluido: false }));
+          }} style={styles.btnConcluir}>CONCLUIR TREINO ✓</button>
         </div>
 
         {exerciciosDoDia.map(ex => (
@@ -268,11 +244,9 @@ function App() {
           <input value={novoNome} onChange={(e)=>setNovoNome(e.target.value)} placeholder="Novo Treino" style={styles.inputTreino}/>
           <button onClick={async () => {
             if (!novoNome) return;
-            if (window.confirm("Criar treino?")) {
-              const docRef = await addDoc(collection(db, "treinos"), { nome: novoNome, cicloId: cicloSelecionado.id, userId: user.uid, ordem: meusTreinos.length });
-              if (!cicloSelecionado.ultimoTreinoId) await updateDoc(doc(db, "ciclos", cicloSelecionado.id), { ultimoTreinoId: docRef.id, ultimoTreinoNome: novoNome });
-              setNovoNome('');
-            }
+            const docRef = await addDoc(collection(db, "treinos"), { nome: novoNome, cicloId: cicloSelecionado.id, userId: user.uid, ordem: meusTreinos.length });
+            if (!cicloSelecionado.ultimoTreinoId) await updateDoc(doc(db, "ciclos", cicloSelecionado.id), { ultimoTreinoId: docRef.id, ultimoTreinoNome: novoNome });
+            setNovoNome('');
           }} style={styles.btnAdd}>+</button>
         </div>
         
@@ -284,7 +258,7 @@ function App() {
                 <button onClick={(e)=>{e.stopPropagation(); moverTreino(index, 1)}} style={styles.btnSeta}>▼</button>
               </div>
               <span style={{flex:1, fontWeight:'bold'}}>{t.nome}</span>
-              <button onClick={(e) => { e.stopPropagation(); if(window.confirm("Excluir?")) deleteDoc(doc(db, "treinos", t.id)) }} style={{color:'red', border:'none', background:'none'}}>✕</button>
+              <button onClick={(e) => { e.stopPropagation(); if(window.confirm("Excluir treino?")) deleteDoc(doc(db, "treinos", t.id)) }} style={{color:'red', border:'none', background:'none', padding:'10px'}}>✕</button>
             </div>
           ))}
         </div>
@@ -292,7 +266,6 @@ function App() {
     </div>
   );
 
-  // TELA INICIAL (LISTA DE CICLOS)
   return (
     <div style={styles.containerMobile}>
       <header style={styles.header}>
@@ -310,8 +283,7 @@ function App() {
               await addDoc(collection(db, "ciclos"), { 
                 nome: novoNome, userId: user.uid, createdAt: new Date(), 
                 alunoEmail: emailAluno.toLowerCase().trim(), 
-                status: emailAluno ? "pendente" : "aceito",
-                ordem: meusCiclos.length
+                status: emailAluno ? "pendente" : "aceito", ordem: meusCiclos.length
               });
               setNovoNome(''); setEmailAluno('');
             }} style={styles.btnAdd}>+</button>
@@ -324,26 +296,20 @@ function App() {
           const eDono = c.userId === user.uid;
           const souAluno = c.alunoEmail === user.email.toLowerCase();
 
-          // LÓGICA DE CORES
           let bgColor = '#fff';
-          if (eDono && c.alunoEmail) bgColor = c.status === 'aceito' ? '#e8f5e9' : '#fff9c4'; // Verde (Aceito) ou Amarelo (Pendente)
-          if (souAluno && !eDono && c.status === 'aceito') bgColor = '#e3f2fd'; // Azul (Aluno aceitou)
+          if (eDono && c.alunoEmail) bgColor = c.status === 'aceito' ? '#e8f5e9' : '#fff9c4'; 
+          if (souAluno && !eDono && c.status === 'aceito') bgColor = '#e3f2fd'; 
 
           return (
-            <div key={c.id} style={{...styles.treinoCard, backgroundColor: bgColor, border: isPendente ? '2px solid orange' : 'none'}} onClick={() => {
-              if(!isPendente) setCicloSelecionado(c);
-            }}>
+            <div key={c.id} style={{...styles.treinoCard, backgroundColor: bgColor, border: isPendente ? '2px solid orange' : 'none'}} onClick={() => { if(!isPendente) setCicloSelecionado(c); }}>
               <div style={{display:'flex', flexDirection:'column', gap:'4px', marginRight:'12px'}}>
                 <button onClick={(e)=>{e.stopPropagation(); moverCiclo(index, -1)}} style={styles.btnSeta}>▲</button>
                 <button onClick={(e)=>{e.stopPropagation(); moverCiclo(index, 1)}} style={styles.btnSeta}>▼</button>
               </div>
               <div style={{ flex: 1 }}>
                 <strong>{c.nome}</strong>
-                <div style={{fontSize:'10px', color:'#777'}}>
-                    {eDono && (!c.alunoEmail) ? "● Meu Treino" : (eDono ? `● Aluno: ${c.alunoEmail}` : `● Personal`)}
-                </div>
+                <div style={{fontSize:'10px', color:'#777'}}>{eDono && !c.alunoEmail ? "● Meu Treino" : (eDono ? `● Aluno: ${c.alunoEmail}` : `● Personal`)}</div>
               </div>
-              
               <div style={{display:'flex', gap:'10px'}}>
                 {eDono && <button onClick={(e) => { e.stopPropagation(); clonarCiclo(c); }} style={styles.btnClone}>📋</button>}
                 {isPendente ? (
@@ -368,7 +334,7 @@ const styles = {
   main: { padding: '20px' },
   cardPersonal: { backgroundColor: '#e3f2fd', padding: '15px', borderRadius: '15px', marginBottom: '15px' },
   addArea: { display: 'flex', gap: '10px' },
-  inputTreino: { flex: 1, padding: '12px', borderRadius: '10px', border: '1px solid #DDD', outline: 'none' },
+  inputTreino: { flex: 1, padding: '10px', borderRadius: '10px', border: '1px solid #DDD', outline: 'none' },
   btnAdd: { backgroundColor: '#007bff', color: 'white', border: 'none', width: '45px', borderRadius: '10px', fontSize: '24px' },
   treinoCard: { padding: '15px', borderRadius: '12px', display: 'flex', alignItems: 'center', marginBottom: '10px', boxShadow: '0 2px 4px rgba(0,0,0,0.05)', cursor:'pointer' },
   btnSeta: { background: '#f0f0f0', border: 'none', borderRadius: '4px', fontSize: '10px', cursor: 'pointer', padding: '2px 6px' },
