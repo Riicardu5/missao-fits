@@ -3,7 +3,7 @@ import { auth, provider, db } from './firebase'
 import { signInWithPopup, signOut, onAuthStateChanged } from 'firebase/auth'
 import { 
   collection, addDoc, query, where, onSnapshot, 
-  doc, deleteDoc, updateDoc, or, getDocs
+  doc, deleteDoc, updateDoc, or, getDocs, limit
 } from 'firebase/firestore'
 import { bancoExercicios } from './bancoExercicios'
 
@@ -19,6 +19,7 @@ function App() {
   const [novoNome, setNovoNome] = useState('');
   const [busca, setBusca] = useState('');
 
+  // Monitora Login
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
@@ -27,6 +28,7 @@ function App() {
     return () => unsub();
   }, []);
 
+  // Monitora Ciclos (Seus e onde você é aluno)
   useEffect(() => {
     if (user) {
       const q = query(collection(db, "ciclos"), or(where("userId", "==", user.uid), where("alunoEmail", "==", user.email.toLowerCase())));
@@ -43,6 +45,7 @@ function App() {
     }
   }, [user, cicloSelecionado?.id]);
 
+  // Monitora Treinos do Ciclo
   useEffect(() => {
     if (cicloSelecionado?.id) {
       const q = query(collection(db, "treinos"), where("cicloId", "==", cicloSelecionado.id));
@@ -55,6 +58,7 @@ function App() {
     }
   }, [cicloSelecionado?.id]);
 
+  // Monitora Exercícios do Treino Ativo (Para execução)
   useEffect(() => {
     if (cicloSelecionado?.ultimoTreinoId) {
       const q = query(collection(db, "exercicios_treino"), where("treinoId", "==", cicloSelecionado.ultimoTreinoId));
@@ -65,6 +69,7 @@ function App() {
     }
   }, [cicloSelecionado?.ultimoTreinoId]);
 
+  // Monitora Exercícios do Treino selecionado para Edição
   useEffect(() => {
     if (treinoSelecionado?.id) {
       const q = query(collection(db, "exercicios_treino"), where("treinoId", "==", treinoSelecionado.id));
@@ -75,6 +80,7 @@ function App() {
     }
   }, [treinoSelecionado]);
 
+  // Funções de Movimentação (Ordem)
   const moverCiclo = async (index, direcao) => {
     const novaLista = [...meusCiclos];
     const novoIndex = index + direcao;
@@ -97,6 +103,7 @@ function App() {
     }
   };
 
+  // Função de Clonagem
   const clonarCiclo = async (cicloOriginal) => {
     const novoEmail = window.prompt("E-mail do novo aluno (vazio p/ você):", cicloOriginal.alunoEmail || "");
     if (novoEmail === null) return;
@@ -115,17 +122,20 @@ function App() {
       const exerciciosSnap = await getDocs(query(collection(db, "exercicios_treino"), where("treinoId", "==", tDoc.id)));
       for (const eDoc of exerciciosSnap.docs) {
         const eData = eDoc.data();
-        await addDoc(collection(db, "exercicios_treino"), { ...eData, treinoId: novoTreinoRef.id, userId: user.uid, ownerEmail: novoEmail.toLowerCase().trim() || user.email.toLowerCase() });
+        await addDoc(collection(db, "exercicios_treino"), { 
+          ...eData, 
+          treinoId: novoTreinoRef.id, 
+          userId: user.uid, 
+          ownerEmail: novoEmail.toLowerCase().trim() || user.email.toLowerCase() 
+        });
       }
     }
-    alert("Ciclo clonado!");
+    alert("Ciclo clonado com sucesso!");
   };
 
-  // ... (mantenha os imports e o resto do código acima igual)
-
+  // Salvar Peso e Sincronizar
   const salvarAlteracoesExercicio = async (ex, novaCarga, novaSerie, novaObs) => {
     if (window.confirm("Sincronizar pesos nesta conta?")) {
-      // FORÇANDO: Pega o e-mail do aluno do ciclo, se não tiver, usa o seu.
       const donoEmail = (cicloSelecionado?.alunoEmail && cicloSelecionado.alunoEmail.trim() !== "") 
                         ? cicloSelecionado.alunoEmail.toLowerCase().trim() 
                         : user.email.toLowerCase();
@@ -134,54 +144,23 @@ function App() {
         carga: novaCarga, series: novaSerie, obs: novaObs || "", ownerEmail: donoEmail 
       });
 
-      // SINCRONIZAÇÃO SEGURA: Só busca exercícios onde o donoEmail seja EXATAMENTE o mesmo
-      const q = query(
-        collection(db, "exercicios_treino"), 
-        where("nome", "==", ex.nome), 
-        where("ownerEmail", "==", donoEmail) 
-      );
-      
+      const q = query(collection(db, "exercicios_treino"), where("nome", "==", ex.nome), where("ownerEmail", "==", donoEmail));
       const snap = await getDocs(q);
       snap.forEach((d) => {
-        if(d.id !== ex.id) {
-          updateDoc(doc(db, "exercicios_treino", d.id), { 
-            carga: novaCarga, series: novaSerie, obs: novaObs || "" 
-          });
-        }
+        if(d.id !== ex.id) updateDoc(doc(db, "exercicios_treino", d.id), { carga: novaCarga, series: novaSerie, obs: novaObs || "" });
       });
-      alert("Sincronizado apenas para este perfil!");
+      alert("Peso sincronizado!");
     }
   };
 
-  // ... (no componente de edição de treino, ajuste o onClick de adicionar exercício):
-
-  // DENTRO DO RETURN (no filtro do bancoExercicios):
-  onClick={async () => {
-    if(window.confirm(`Adicionar ${ex.nome}?`)) {
-      // GARANTIA: Define o dono na hora da criação
-      const donoEmail = (cicloSelecionado?.alunoEmail && cicloSelecionado.alunoEmail.trim() !== "") 
-                        ? cicloSelecionado.alunoEmail.toLowerCase().trim() 
-                        : user.email.toLowerCase();
-
-      await addDoc(collection(db, "exercicios_treino"), { 
-        treinoId: treinoSelecionado.id, 
-        userId: user.uid, 
-        ownerEmail: donoEmail, // Aqui é o segredo!
-        nome: ex.nome, 
-        foto: ex.foto, 
-        series: "3", 
-        carga: "10", 
-        concluido: false, 
-        obs: "" 
-      });
-    }
-  }
+  // Render Login
   if (!user) return (
     <div style={styles.containerMobile}><div style={styles.contentCenter}>
       <h1>Missão Fits 💪</h1><button onClick={() => signInWithPopup(auth, provider)} style={styles.btnGoogle}>Entrar com Google</button>
     </div></div>
   );
 
+  // TELA DE EDIÇÃO DE TREINO (Adicionar Exercícios)
   if (treinoSelecionado) return (
     <div style={styles.containerMobile}>
       <header style={styles.header}>
@@ -192,7 +171,7 @@ function App() {
                 const novo = document.getElementById('editNomeTreino').value;
                 updateDoc(doc(db, "treinos", treinoSelecionado.id), { nome: novo });
                 if(cicloSelecionado.ultimoTreinoId === treinoSelecionado.id) updateDoc(doc(db, "ciclos", cicloSelecionado.id), { ultimoTreinoNome: novo });
-                alert("Nome salvo!");
+                alert("Salvo!");
             }} style={{...styles.btnAdd, fontSize:'14px', width:'60px'}}>Salvar</button>
         </div>
       </header>
@@ -202,29 +181,34 @@ function App() {
             <div style={{display:'flex', alignItems:'center'}}>
               <img src={ex.foto} style={styles.exerciseImgSmall} alt=""/>
               <strong style={{flex:1, marginLeft:'10px'}}>{ex.nome}</strong>
-              <button onClick={async () => { 
-                if(window.confirm("Remover exercício?")) {
-                  try {
-                    await deleteDoc(doc(db, "exercicios_treino", ex.id));
-                  } catch (e) {
-                    alert("Erro de Permissão no Firebase! Verifique as Rules.");
-                    console.error(e);
-                  }
-                }
-              }} style={{color:'red', border:'none', background:'none'}}>✕</button>
+              <button onClick={async () => { if(window.confirm("Remover?")) { try { await deleteDoc(doc(db, "exercicios_treino", ex.id)); } catch(e) { alert("Erro ao excluir!"); } } }} style={{color:'red', border:'none', background:'none'}}>✕</button>
             </div>
           </div>
         ))}
         <h4 style={styles.titleSection}>Adicionar Exercício</h4>
-        <input placeholder="Buscar..." value={busca} onChange={(e)=>setBusca(e.target.value)} style={styles.inputTreino}/>
+        <input placeholder="Buscar no banco..." value={busca} onChange={(e)=>setBusca(e.target.value)} style={styles.inputTreino}/>
         <div style={{marginTop:'10px', maxHeight:'300px', overflowY:'auto'}}>
           {bancoExercicios.filter(e => e.nome.toLowerCase().includes(busca.toLowerCase())).map(ex => (
             <div key={ex.id} style={styles.treinoCard} onClick={async () => {
               if(window.confirm(`Adicionar ${ex.nome}?`)) {
-                const donoEmail = cicloSelecionado.alunoEmail || user.email.toLowerCase();
-                addDoc(collection(db, "exercicios_treino"), { 
+                const donoEmail = (cicloSelecionado?.alunoEmail && cicloSelecionado.alunoEmail.trim() !== "") 
+                                  ? cicloSelecionado.alunoEmail.toLowerCase().trim() 
+                                  : user.email.toLowerCase();
+
+                const q = query(collection(db, "exercicios_treino"), where("nome", "==", ex.nome), where("ownerEmail", "==", donoEmail), limit(1));
+                let cHist = "0", sHist = "0", oHist = "";
+
+                try {
+                  const snap = await getDocs(q);
+                  if (!snap.empty) {
+                    const d = snap.docs[0].data();
+                    cHist = d.carga || "0"; sHist = d.series || "0"; oHist = d.obs || "";
+                  }
+                } catch (err) { console.error(err); }
+
+                await addDoc(collection(db, "exercicios_treino"), { 
                   treinoId: treinoSelecionado.id, userId: user.uid, ownerEmail: donoEmail,
-                  nome: ex.nome, foto: ex.foto, series: "3", carga: "10", concluido: false, obs: "" 
+                  nome: ex.nome, foto: ex.foto, series: sHist, carga: cHist, concluido: false, obs: oHist 
                 });
               }
             }}>
@@ -236,6 +220,7 @@ function App() {
     </div>
   );
 
+  // TELA DO CICLO (Treino do dia e Gerenciar Treinos)
   if (cicloSelecionado) return (
     <div style={styles.containerMobile}>
       <header style={styles.header}>
@@ -245,13 +230,13 @@ function App() {
             <button onClick={() => {
                 const novo = document.getElementById('editNomeCiclo').value;
                 updateDoc(doc(db, "ciclos", cicloSelecionado.id), { nome: novo });
-                alert("Nome do Ciclo salvo!");
+                alert("Salvo!");
             }} style={{...styles.btnAdd, fontSize:'14px', width:'60px'}}>Salvar</button>
         </div>
       </header>
       <main style={styles.main}>
         <div style={styles.cardTreinoDoDia}>
-          <div style={{fontSize:'18px', fontWeight:'bold'}}>{cicloSelecionado.ultimoTreinoNome || "Crie um treino"}</div>
+          <div style={{fontSize:'18px', fontWeight:'bold'}}>{cicloSelecionado.ultimoTreinoNome || "Selecione um treino"}</div>
           <button onClick={async () => {
              const indexAtual = meusTreinos.findIndex(t => t.id === cicloSelecionado.ultimoTreinoId);
              let proximoIndex = indexAtual + 1 >= meusTreinos.length ? 0 : indexAtual + 1;
@@ -284,7 +269,7 @@ function App() {
 
         <h4 style={styles.titleSection}>Gerenciar Treinos</h4>
         <div style={styles.addArea}>
-          <input value={novoNome} onChange={(e)=>setNovoNome(e.target.value)} placeholder="Novo Treino" style={styles.inputTreino}/>
+          <input value={novoNome} onChange={(e)=>setNovoNome(e.target.value)} placeholder="Ex: Treino A" style={styles.inputTreino}/>
           <button onClick={async () => {
             if (!novoNome) return;
             const docRef = await addDoc(collection(db, "treinos"), { nome: novoNome, cicloId: cicloSelecionado.id, userId: user.uid, ordem: meusTreinos.length });
@@ -292,25 +277,15 @@ function App() {
             setNovoNome('');
           }} style={styles.btnAdd}>+</button>
         </div>
-        
         <div style={{marginTop: '15px'}}>
           {meusTreinos.map((t, index) => (
             <div key={t.id} style={styles.treinoCard} onClick={() => setTreinoSelecionado(t)}>
-              <div style={{display:'flex', flexDirection:'column', gap:'4px', marginRight:'12px'}}>
+              <div style={styles.setasArea}>
                 <button onClick={(e)=>{e.stopPropagation(); moverTreino(index, -1)}} style={styles.btnSeta}>▲</button>
                 <button onClick={(e)=>{e.stopPropagation(); moverTreino(index, 1)}} style={styles.btnSeta}>▼</button>
               </div>
               <span style={{flex:1, fontWeight:'bold'}}>{t.nome}</span>
-              <button onClick={async (e) => { 
-                e.stopPropagation(); 
-                if(window.confirm("Excluir este treino inteiro?")) {
-                  try {
-                    await deleteDoc(doc(db, "treinos", t.id));
-                  } catch (err) {
-                    alert("O Firebase bloqueou! Verifique as Rules no console.");
-                  }
-                }
-              }} style={{color:'red', border:'none', background:'none', padding:'10px'}}>✕</button>
+              <button onClick={async (e) => { e.stopPropagation(); if(window.confirm("Excluir?")) try { await deleteDoc(doc(db, "treinos", t.id)); } catch(err) { alert("Sem permissão!"); } }} style={styles.btnDel}>✕</button>
             </div>
           ))}
         </div>
@@ -318,6 +293,7 @@ function App() {
     </div>
   );
 
+  // TELA INICIAL (Lista de Ciclos)
   return (
     <div style={styles.containerMobile}>
       <header style={styles.header}>
@@ -327,7 +303,7 @@ function App() {
       <main style={styles.main}>
         <div style={styles.cardPersonal}>
           <h4>Novo Ciclo</h4>
-          <input value={emailAluno} onChange={(e)=>setEmailAluno(e.target.value)} placeholder="E-mail do Aluno (vazio p/ você)" style={{...styles.inputTreino, width:'100%', marginBottom:'10px', boxSizing:'border-box'}}/>
+          <input value={emailAluno} onChange={(e)=>setEmailAluno(e.target.value)} placeholder="E-mail do Aluno (vazio p/ você)" style={styles.inputFull}/>
           <div style={styles.addArea}>
             <input value={novoNome} onChange={(e)=>setNovoNome(e.target.value)} placeholder="Nome do Ciclo" style={styles.inputTreino}/>
             <button onClick={async () => {
@@ -347,32 +323,24 @@ function App() {
           const isPendente = c.alunoEmail === user.email.toLowerCase() && c.status === "pendente";
           const eDono = c.userId === user.uid;
           const souAluno = c.alunoEmail === user.email.toLowerCase();
-
-          let bgColor = '#fff';
-          if (eDono && c.alunoEmail) bgColor = c.status === 'aceito' ? '#e8f5e9' : '#fff9c4'; 
-          if (souAluno && !eDono && c.status === 'aceito') bgColor = '#e3f2fd'; 
+          let bgColor = eDono && c.alunoEmail ? (c.status === 'aceito' ? '#e8f5e9' : '#fff9c4') : (souAluno && !eDono ? '#e3f2fd' : '#fff');
 
           return (
             <div key={c.id} style={{...styles.treinoCard, backgroundColor: bgColor, border: isPendente ? '2px solid orange' : 'none'}} onClick={() => { if(!isPendente) setCicloSelecionado(c); }}>
-              <div style={{display:'flex', flexDirection:'column', gap:'4px', marginRight:'12px'}}>
+              <div style={styles.setasArea}>
                 <button onClick={(e)=>{e.stopPropagation(); moverCiclo(index, -1)}} style={styles.btnSeta}>▲</button>
                 <button onClick={(e)=>{e.stopPropagation(); moverCiclo(index, 1)}} style={styles.btnSeta}>▼</button>
               </div>
               <div style={{ flex: 1 }}>
                 <strong>{c.nome}</strong>
-                <div style={{fontSize:'10px', color:'#777'}}>{eDono && !c.alunoEmail ? "● Meu Treino" : (eDono ? `● Aluno: ${c.alunoEmail}` : `● Personal`)}</div>
+                <div style={styles.subtext}>{eDono && !c.alunoEmail ? "● Pessoal" : (eDono ? `● Aluno: ${c.alunoEmail}` : `● Personal`)}</div>
               </div>
               <div style={{display:'flex', gap:'10px'}}>
                 {eDono && <button onClick={(e) => { e.stopPropagation(); clonarCiclo(c); }} style={styles.btnClone}>📋</button>}
                 {isPendente ? (
                     <button onClick={(e) => { e.stopPropagation(); updateDoc(doc(db, "ciclos", c.id), { status: "aceito" }) }} style={styles.btnAceitar}>Aceitar</button>
                 ) : (
-                    <button onClick={async (e) => { 
-                      e.stopPropagation(); 
-                      if(window.confirm("Excluir ciclo?")) { 
-                        try { await deleteDoc(doc(db, "ciclos", c.id)); } catch(err) { alert("Sem permissão!"); } 
-                      } 
-                    }} style={{ color: 'red', border: 'none', background: 'none' }}>✕</button>
+                    <button onClick={async (e) => { e.stopPropagation(); if(window.confirm("Excluir?")) try { await deleteDoc(doc(db, "ciclos", c.id)); } catch(err) { alert("Sem permissão!"); } }} style={styles.btnDel}>✕</button>
                 )}
               </div>
             </div>
@@ -390,11 +358,13 @@ const styles = {
   header: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '15px 20px', backgroundColor: '#fff', borderBottom: '1px solid #EEE' },
   main: { padding: '20px' },
   cardPersonal: { backgroundColor: '#e3f2fd', padding: '15px', borderRadius: '15px', marginBottom: '15px' },
+  inputFull: { width:'100%', marginBottom:'10px', padding:'10px', borderRadius:'10px', border:'1px solid #DDD', boxSizing:'border-box' },
   addArea: { display: 'flex', gap: '10px' },
   inputTreino: { flex: 1, padding: '10px', borderRadius: '10px', border: '1px solid #DDD', outline: 'none' },
   btnAdd: { backgroundColor: '#007bff', color: 'white', border: 'none', width: '45px', borderRadius: '10px', fontSize: '24px' },
   treinoCard: { padding: '15px', borderRadius: '12px', display: 'flex', alignItems: 'center', marginBottom: '10px', boxShadow: '0 2px 4px rgba(0,0,0,0.05)', cursor:'pointer' },
-  btnSeta: { background: '#f0f0f0', border: 'none', borderRadius: '4px', fontSize: '10px', cursor: 'pointer', padding: '2px 6px' },
+  setasArea: { display:'flex', flexDirection:'column', gap:'4px', marginRight:'12px' },
+  btnSeta: { background: '#f0f0f0', border: 'none', borderRadius: '4px', fontSize: '10px', padding: '2px 6px' },
   exerciseImgSmall: { width: '40px', height: '40px', borderRadius: '8px', objectFit:'cover' },
   btnAddSmall: { backgroundColor: '#28a745', color: 'white', border: 'none', width: '30px', height: '30px', borderRadius: '50%' },
   btnBack: { border: 'none', background: 'none', color: '#007bff', fontWeight: 'bold' },
@@ -407,7 +377,9 @@ const styles = {
   btnSalvarMini: { width:'100%', marginTop:'10px', padding:'8px', backgroundColor:'#007bff', color:'#fff', border:'none', borderRadius:'6px', fontSize:'12px', fontWeight:'bold' },
   btnAceitar: { backgroundColor:'orange', color:'white', border:'none', padding:'5px 10px', borderRadius:'5px', fontWeight:'bold' },
   btnClone: { background: '#f8f9fa', border: '1px solid #ddd', borderRadius: '8px', padding: '5px' },
+  btnDel: { color: 'red', border: 'none', background: 'none', padding: '10px' },
   btnLogout: { color: 'red', border: 'none', background: 'none' },
+  subtext: { fontSize: '10px', color: '#777' },
   titleSection: { borderLeft: '4px solid #007bff', paddingLeft: '10px', margin: '20px 0 10px', fontWeight: 'bold' }
 };
 
