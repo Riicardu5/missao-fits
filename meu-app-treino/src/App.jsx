@@ -166,7 +166,16 @@ function App() {
             <div style={{display:'flex', alignItems:'center'}}>
               <img src={ex.foto} style={styles.exerciseImgSmall} alt=""/>
               <strong style={{flex:1, marginLeft:'10px'}}>{ex.nome}</strong>
-              <button onClick={async () => { if(window.confirm("Remover?")) { try { await deleteDoc(doc(db, "exercicios_treino", ex.id)); } catch(e) { alert("Erro de permissão no Firebase!"); console.error(e); } } }} style={{color:'red', border:'none', background:'none'}}>✕</button>
+              <button onClick={async () => { 
+                if(window.confirm("Remover exercício?")) {
+                  try {
+                    await deleteDoc(doc(db, "exercicios_treino", ex.id));
+                  } catch (e) {
+                    alert("Erro de Permissão no Firebase! Verifique as Rules.");
+                    console.error(e);
+                  }
+                }
+              }} style={{color:'red', border:'none', background:'none'}}>✕</button>
             </div>
           </div>
         ))}
@@ -256,7 +265,16 @@ function App() {
                 <button onClick={(e)=>{e.stopPropagation(); moverTreino(index, 1)}} style={styles.btnSeta}>▼</button>
               </div>
               <span style={{flex:1, fontWeight:'bold'}}>{t.nome}</span>
-              <button onClick={async (e) => { e.stopPropagation(); if(window.confirm("Excluir treino?")) { try { await deleteDoc(doc(db, "treinos", t.id)); } catch(err) { alert("Sem permissão para excluir!"); console.error(err); } } }} style={{color:'red', border:'none', background:'none', padding:'10px'}}>✕</button>
+              <button onClick={async (e) => { 
+                e.stopPropagation(); 
+                if(window.confirm("Excluir este treino inteiro?")) {
+                  try {
+                    await deleteDoc(doc(db, "treinos", t.id));
+                  } catch (err) {
+                    alert("O Firebase bloqueou! Verifique as Rules no console.");
+                  }
+                }
+              }} style={{color:'red', border:'none', background:'none', padding:'10px'}}>✕</button>
             </div>
           ))}
         </div>
@@ -313,7 +331,12 @@ function App() {
                 {isPendente ? (
                     <button onClick={(e) => { e.stopPropagation(); updateDoc(doc(db, "ciclos", c.id), { status: "aceito" }) }} style={styles.btnAceitar}>Aceitar</button>
                 ) : (
-                    <button onClick={async (e) => { e.stopPropagation(); if(window.confirm("Excluir ciclo?")) { try { await deleteDoc(doc(db, "ciclos", c.id)); } catch(err) { alert("Sem permissão!"); } } }} style={{ color: 'red', border: 'none', background: 'none' }}>✕</button>
+                    <button onClick={async (e) => { 
+                      e.stopPropagation(); 
+                      if(window.confirm("Excluir ciclo?")) { 
+                        try { await deleteDoc(doc(db, "ciclos", c.id)); } catch(err) { alert("Sem permissão!"); } 
+                      } 
+                    }} style={{ color: 'red', border: 'none', background: 'none' }}>✕</button>
                 )}
               </div>
             </div>
