@@ -3,7 +3,7 @@ import { auth, provider, db } from './firebase'
 import { signInWithPopup, signOut, onAuthStateChanged } from 'firebase/auth'
 import { 
   collection, addDoc, query, where, onSnapshot, 
-  doc, deleteDoc, updateDoc, or, getDocs
+  doc, deleteDoc, updateDoc, or, getDocs, orderBy
 } from 'firebase/firestore'
 import { bancoExercicios } from './bancoExercicios'
 
@@ -32,6 +32,8 @@ function App() {
       const q = query(collection(db, "ciclos"), or(where("userId", "==", user.uid), where("alunoEmail", "==", user.email.toLowerCase())));
       const unsub = onSnapshot(q, (snapshot) => {
         const lista = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id }));
+        // Ordenação manual por campo 'ordem'
+        lista.sort((a, b) => (Number(a.ordem) || 0) - (Number(b.ordem) || 0));
         setMeusCiclos(lista);
         if (cicloSelecionado) {
           const atualizado = lista.find(c => c.id === cicloSelecionado.id);
@@ -74,6 +76,17 @@ function App() {
     }
   }, [treinoSelecionado]);
 
+  const moverCiclo = async (index, direcao) => {
+    const novaLista = [...meusCiclos];
+    const novoIndex = index + direcao;
+    if (novoIndex < 0 || novoIndex >= novaLista.length) return;
+    const [removido] = novaLista.splice(index, 1);
+    novaLista.splice(novoIndex, 0, removido);
+    for (let i = 0; i < novaLista.length; i++) {
+      await updateDoc(doc(db, "ciclos", novaLista[i].id), { ordem: i });
+    }
+  };
+
   const moverTreino = async (index, direcao) => {
     const novaLista = [...meusTreinos];
     const novoIndex = index + direcao;
@@ -85,37 +98,62 @@ function App() {
     }
   };
 
-  const salvarAlteracoesExercicio = async (ex, novaCarga, novaSerie, novaObs) => {
-    if (window.confirm("Salvar alterações para esta conta?")) {
-      // Se o exercício não tem ownerEmail, definimos um agora
-      const donoEmail = ex.ownerEmail || (cicloSelecionado?.alunoEmail ? cicloSelecionado.alunoEmail : user.email.toLowerCase());
-      
-      // Atualiza o próprio exercício imediatamente (e garante que ele tenha o ownerEmail agora)
-      await updateDoc(doc(db, "exercicios_treino", ex.id), { 
-        carga: novaCarga, 
-        series: novaSerie,
-        obs: novaObs || "",
-        ownerEmail: donoEmail 
+  const clonarCiclo = async (cicloOriginal) => {
+    const novoEmail = window.prompt("Para qual e-mail de aluno deseja clonar? (Deixe vazio para ser seu)", cicloOriginal.alunoEmail || "");
+    if (novoEmail === null) return;
+
+    const confirmacao = window.confirm(`Deseja clonar o ciclo "${cicloOriginal.nome}"?`);
+    if (!confirmacao) return;
+
+    // 1. Criar novo ciclo
+    const novoCicloRef = await addDoc(collection(db, "ciclos"), {
+      nome: cicloOriginal.nome + " (Cópia)",
+      userId: user.uid,
+      alunoEmail: novoEmail.toLowerCase().trim(),
+      status: novoEmail ? "pendente" : "aceito",
+      createdAt: new Date(),
+      ordem: meusCiclos.length
+    });
+
+    // 2. Buscar treinos do original
+    const treinosSnap = await getDocs(query(collection(db, "treinos"), where("cicloId", "==", cicloOriginal.id)));
+    
+    for (const tDoc of treinosSnap.docs) {
+      const tData = tDoc.data();
+      const novoTreinoRef = await addDoc(collection(db, "treinos"), {
+        ...tData,
+        cicloId: novoCicloRef.id,
+        userId: user.uid
       });
 
-      // Busca outros que pertençam ao mesmo dono (e-mail)
-      const q = query(
-        collection(db, "exercicios_treino"), 
-        where("nome", "==", ex.nome),
-        where("ownerEmail", "==", donoEmail)
-      );
-      
+      // 3. Buscar exercícios desse treino
+      const exerciciosSnap = await getDocs(query(collection(db, "exercicios_treino"), where("treinoId", "==", tDoc.id)));
+      for (const eDoc of exerciciosSnap.docs) {
+        const eData = eDoc.data();
+        await addDoc(collection(db, "exercicios_treino"), {
+          ...eData,
+          treinoId: novoTreinoRef.id,
+          userId: user.uid,
+          ownerEmail: novoEmail.toLowerCase().trim() || user.email.toLowerCase()
+        });
+      }
+    }
+    alert("Ciclo clonado com sucesso!");
+  };
+
+  const salvarAlteracoesExercicio = async (ex, novaCarga, novaSerie, novaObs) => {
+    if (window.confirm("Salvar alterações para esta conta?")) {
+      const donoEmail = ex.ownerEmail || (cicloSelecionado?.alunoEmail ? cicloSelecionado.alunoEmail : user.email.toLowerCase());
+      await updateDoc(doc(db, "exercicios_treino", ex.id), { 
+        carga: novaCarga, series: novaSerie, obs: novaObs || "", ownerEmail: donoEmail 
+      });
+
+      const q = query(collection(db, "exercicios_treino"), where("nome", "==", ex.nome), where("ownerEmail", "==", donoEmail));
       const snap = await getDocs(q);
       snap.forEach((d) => {
-        if(d.id !== ex.id) { // Não precisa atualizar o que já acabamos de atualizar acima
-            updateDoc(doc(db, "exercicios_treino", d.id), { 
-              carga: novaCarga, 
-              series: novaSerie,
-              obs: novaObs || ""
-            });
-        }
+        if(d.id !== ex.id) updateDoc(doc(db, "exercicios_treino", d.id), { carga: novaCarga, series: novaSerie, obs: novaObs || "" });
       });
-      alert("Peso sincronizado com sucesso!");
+      alert("Peso sincronizado!");
     }
   };
 
@@ -136,6 +174,7 @@ function App() {
     </div></div>
   );
 
+  // TELA DE EDIÇÃO DE TREINO
   if (treinoSelecionado) return (
     <div style={styles.containerMobile}>
       <header style={styles.header}>
@@ -167,16 +206,10 @@ function App() {
           {bancoExercicios.filter(e => e.nome.toLowerCase().includes(busca.toLowerCase())).map(ex => (
             <div key={ex.id} style={styles.treinoCard} onClick={async () => {
               if(window.confirm(`Adicionar ${ex.nome}?`)) {
-                const donoEmail = cicloSelecionado.alunoEmail && cicloSelecionado.alunoEmail.trim() !== "" 
-                   ? cicloSelecionado.alunoEmail 
-                   : user.email.toLowerCase();
-
+                const donoEmail = cicloSelecionado.alunoEmail || user.email.toLowerCase();
                 addDoc(collection(db, "exercicios_treino"), { 
-                  treinoId: treinoSelecionado.id, 
-                  userId: user.uid,
-                  ownerEmail: donoEmail,
-                  nome: ex.nome, 
-                  foto: ex.foto, series: "3", carga: "10", concluido: false, obs: "" 
+                  treinoId: treinoSelecionado.id, userId: user.uid, ownerEmail: donoEmail,
+                  nome: ex.nome, foto: ex.foto, series: "3", carga: "10", concluido: false, obs: "" 
                 });
               }
             }}>
@@ -188,11 +221,20 @@ function App() {
     </div>
   );
 
+  // TELA DO CICLO
   if (cicloSelecionado) return (
     <div style={styles.containerMobile}>
       <header style={styles.header}>
         <button onClick={() => setCicloSelecionado(null)} style={styles.btnBack}>← Voltar</button>
-        <h3 style={{margin:0}}>{cicloSelecionado.nome}</h3>
+        <input 
+          style={{...styles.inputTreino, border:'none', fontWeight:'bold', fontSize:'16px'}} 
+          defaultValue={cicloSelecionado.nome}
+          onBlur={(e) => {
+            if(e.target.value !== cicloSelecionado.nome) {
+              updateDoc(doc(db, "ciclos", cicloSelecionado.id), { nome: e.target.value });
+            }
+          }}
+        />
       </header>
       <main style={styles.main}>
         <div style={styles.cardTreinoDoDia}>
@@ -250,6 +292,7 @@ function App() {
     </div>
   );
 
+  // TELA INICIAL (LISTA DE CICLOS)
   return (
     <div style={styles.containerMobile}>
       <header style={styles.header}>
@@ -259,43 +302,56 @@ function App() {
       <main style={styles.main}>
         <div style={styles.cardPersonal}>
           <h4>Novo Ciclo</h4>
-          <input value={emailAluno} onChange={(e)=>setEmailAluno(e.target.value)} placeholder="E-mail do Aluno (vazio para você)" style={{...styles.inputTreino, width:'100%', marginBottom:'10px', boxSizing:'border-box'}}/>
+          <input value={emailAluno} onChange={(e)=>setEmailAluno(e.target.value)} placeholder="E-mail do Aluno (vazio p/ você)" style={{...styles.inputTreino, width:'100%', marginBottom:'10px', boxSizing:'border-box'}}/>
           <div style={styles.addArea}>
             <input value={novoNome} onChange={(e)=>setNovoNome(e.target.value)} placeholder="Nome do Ciclo" style={styles.inputTreino}/>
             <button onClick={async () => {
               if(!novoNome) return;
-              if(window.confirm("Criar ciclo?")) {
-                await addDoc(collection(db, "ciclos"), { 
-                  nome: novoNome, userId: user.uid, createdAt: new Date(), 
-                  alunoEmail: emailAluno.toLowerCase().trim(), 
-                  status: emailAluno ? "pendente" : "aceito" 
-                });
-                setNovoNome(''); setEmailAluno('');
-              }
+              await addDoc(collection(db, "ciclos"), { 
+                nome: novoNome, userId: user.uid, createdAt: new Date(), 
+                alunoEmail: emailAluno.toLowerCase().trim(), 
+                status: emailAluno ? "pendente" : "aceito",
+                ordem: meusCiclos.length
+              });
+              setNovoNome(''); setEmailAluno('');
             }} style={styles.btnAdd}>+</button>
           </div>
         </div>
+
         <h2>Meus Ciclos</h2>
-        {meusCiclos.map(c => {
+        {meusCiclos.map((c, index) => {
           const isPendente = c.alunoEmail === user.email.toLowerCase() && c.status === "pendente";
           const eDono = c.userId === user.uid;
-          
+          const souAluno = c.alunoEmail === user.email.toLowerCase();
+
+          // LÓGICA DE CORES
+          let bgColor = '#fff';
+          if (eDono && c.alunoEmail) bgColor = c.status === 'aceito' ? '#e8f5e9' : '#fff9c4'; // Verde (Aceito) ou Amarelo (Pendente)
+          if (souAluno && !eDono && c.status === 'aceito') bgColor = '#e3f2fd'; // Azul (Aluno aceitou)
+
           return (
-            <div key={c.id} style={{...styles.treinoCard, border: isPendente ? '2px solid orange' : 'none'}} onClick={() => {
+            <div key={c.id} style={{...styles.treinoCard, backgroundColor: bgColor, border: isPendente ? '2px solid orange' : 'none'}} onClick={() => {
               if(!isPendente) setCicloSelecionado(c);
             }}>
+              <div style={{display:'flex', flexDirection:'column', gap:'4px', marginRight:'12px'}}>
+                <button onClick={(e)=>{e.stopPropagation(); moverCiclo(index, -1)}} style={styles.btnSeta}>▲</button>
+                <button onClick={(e)=>{e.stopPropagation(); moverCiclo(index, 1)}} style={styles.btnSeta}>▼</button>
+              </div>
               <div style={{ flex: 1 }}>
                 <strong>{c.nome}</strong>
                 <div style={{fontSize:'10px', color:'#777'}}>
-                    {eDono && (!c.alunoEmail || c.alunoEmail === "") ? "● Meu Treino" : (eDono ? `● Aluno: ${c.alunoEmail}` : `● Personal: ${c.userId.substring(0,5)}`)}
+                    {eDono && (!c.alunoEmail) ? "● Meu Treino" : (eDono ? `● Aluno: ${c.alunoEmail}` : `● Personal`)}
                 </div>
-                {isPendente && <div style={{fontSize:'12px', color:'orange', fontWeight:'bold'}}>Convite Recebido</div>}
               </div>
-              {isPendente ? (
-                <button onClick={(e) => { e.stopPropagation(); updateDoc(doc(db, "ciclos", c.id), { status: "aceito" }) }} style={styles.btnAceitar}>Aceitar</button>
-              ) : (
-                <button onClick={(e) => { e.stopPropagation(); if(window.confirm("Excluir?")) deleteDoc(doc(db, "ciclos", c.id)) }} style={{ color: 'red', border: 'none', background: 'none' }}>✕</button>
-              )}
+              
+              <div style={{display:'flex', gap:'10px'}}>
+                {eDono && <button onClick={(e) => { e.stopPropagation(); clonarCiclo(c); }} style={styles.btnClone}>📋</button>}
+                {isPendente ? (
+                    <button onClick={(e) => { e.stopPropagation(); updateDoc(doc(db, "ciclos", c.id), { status: "aceito" }) }} style={styles.btnAceitar}>Aceitar</button>
+                ) : (
+                    <button onClick={(e) => { e.stopPropagation(); if(window.confirm("Excluir ciclo?")) deleteDoc(doc(db, "ciclos", c.id)) }} style={{ color: 'red', border: 'none', background: 'none' }}>✕</button>
+                )}
+              </div>
             </div>
           );
         })}
@@ -314,7 +370,7 @@ const styles = {
   addArea: { display: 'flex', gap: '10px' },
   inputTreino: { flex: 1, padding: '12px', borderRadius: '10px', border: '1px solid #DDD', outline: 'none' },
   btnAdd: { backgroundColor: '#007bff', color: 'white', border: 'none', width: '45px', borderRadius: '10px', fontSize: '24px' },
-  treinoCard: { padding: '15px', backgroundColor: '#fff', borderRadius: '12px', display: 'flex', alignItems: 'center', marginBottom: '10px', boxShadow: '0 2px 4px rgba(0,0,0,0.05)', cursor:'pointer' },
+  treinoCard: { padding: '15px', borderRadius: '12px', display: 'flex', alignItems: 'center', marginBottom: '10px', boxShadow: '0 2px 4px rgba(0,0,0,0.05)', cursor:'pointer' },
   btnSeta: { background: '#f0f0f0', border: 'none', borderRadius: '4px', fontSize: '10px', cursor: 'pointer', padding: '2px 6px' },
   exerciseImgSmall: { width: '40px', height: '40px', borderRadius: '8px', objectFit:'cover' },
   btnAddSmall: { backgroundColor: '#28a745', color: 'white', border: 'none', width: '30px', height: '30px', borderRadius: '50%' },
@@ -327,6 +383,7 @@ const styles = {
   btnConcluir: { backgroundColor: '#10b981', color: 'white', border: 'none', padding: '12px', borderRadius: '8px', marginTop: '10px', fontWeight: 'bold', width: '100%' },
   btnSalvarMini: { width:'100%', marginTop:'10px', padding:'8px', backgroundColor:'#007bff', color:'#fff', border:'none', borderRadius:'6px', fontSize:'12px', fontWeight:'bold' },
   btnAceitar: { backgroundColor:'orange', color:'white', border:'none', padding:'5px 10px', borderRadius:'5px', fontWeight:'bold' },
+  btnClone: { background: '#f8f9fa', border: '1px solid #ddd', borderRadius: '8px', padding: '5px' },
   btnLogout: { color: 'red', border: 'none', background: 'none' },
   titleSection: { borderLeft: '4px solid #007bff', paddingLeft: '10px', margin: '20px 0 10px', fontWeight: 'bold' }
 };
