@@ -123,7 +123,6 @@ function App() {
 
   const salvarAlteracoesExercicio = async (ex, novaCarga, novaSerie, novaObs) => {
     if (window.confirm("Sincronizar pesos nesta conta?")) {
-      // FORÇA O DONO: se o ciclo tem aluno, o dono é o e-mail do aluno. Se não, é o seu e-mail.
       const donoEmail = (cicloSelecionado?.alunoEmail && cicloSelecionado.alunoEmail !== "") 
                         ? cicloSelecionado.alunoEmail 
                         : user.email.toLowerCase();
@@ -196,15 +195,14 @@ function App() {
     <div style={styles.containerMobile}>
       <header style={styles.header}>
         <button onClick={() => setCicloSelecionado(null)} style={styles.btnBack}>← Voltar</button>
-        <input 
-          style={{...styles.inputTreino, border:'1px solid #ddd', fontWeight:'bold', fontSize:'16px', marginLeft:'10px'}} 
-          defaultValue={cicloSelecionado.nome}
-          onBlur={(e) => {
-            if(e.target.value !== cicloSelecionado.nome) {
-                updateDoc(doc(db, "ciclos", cicloSelecionado.id), { nome: e.target.value });
-            }
-          }}
-        />
+        <div style={{display:'flex', gap:'5px', flex:1, marginLeft:'10px'}}>
+            <input id="editNomeCiclo" defaultValue={cicloSelecionado.nome} style={styles.inputTreino}/>
+            <button onClick={() => {
+                const novo = document.getElementById('editNomeCiclo').value;
+                updateDoc(doc(db, "ciclos", cicloSelecionado.id), { nome: novo });
+                alert("Nome do Ciclo salvo!");
+            }} style={{...styles.btnAdd, fontSize:'14px', width:'60px'}}>Salvar</button>
+        </div>
       </header>
       <main style={styles.main}>
         <div style={styles.cardTreinoDoDia}>
