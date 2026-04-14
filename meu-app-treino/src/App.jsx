@@ -256,6 +256,7 @@ function App() {
                 <button onClick={(e)=>{e.stopPropagation(); moverTreino(index, 1)}} style={styles.btnSeta}>▼</button>
               </div>
               <span style={{flex:1, fontWeight:'bold'}}>{t.nome}</span>
+              {/* REMOVIDA TRAVA DE USERID PARA PERMITIR ALUNO DELETAR TREINO */}
               <button onClick={(e) => { e.stopPropagation(); if(window.confirm("Excluir treino?")) deleteDoc(doc(db, "treinos", t.id)) }} style={{color:'red', border:'none', background:'none', padding:'10px'}}>✕</button>
             </div>
           ))}
