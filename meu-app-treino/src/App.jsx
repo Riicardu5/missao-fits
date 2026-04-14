@@ -3,7 +3,7 @@ import { auth, provider, db } from './firebase'
 import { signInWithPopup, signOut, onAuthStateChanged } from 'firebase/auth'
 import { 
   collection, addDoc, query, where, onSnapshot, 
-  doc, deleteDoc, updateDoc, or, getDocs, writeBatch
+  doc, deleteDoc, updateDoc, or, getDocs
 } from 'firebase/firestore'
 import { bancoExercicios } from './bancoExercicios'
 
@@ -47,9 +47,8 @@ function App() {
       const q = query(collection(db, "treinos"), where("cicloId", "==", cicloSelecionado.id));
       const unsub = onSnapshot(q, (snapshot) => {
         const lista = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id }));
-        // Ordenação rigorosa por número
-        const ordenada = lista.sort((a, b) => (Number(a.ordem) || 0) - (Number(b.ordem) || 0));
-        setMeusTreinos(ordenada);
+        lista.sort((a, b) => (Number(a.ordem) || 0) - (Number(b.ordem) || 0));
+        setMeusTreinos(lista);
       });
       return () => unsub();
     }
@@ -75,31 +74,25 @@ function App() {
     }
   }, [treinoSelecionado]);
 
-  // NOVA LÓGICA DE MOVER: TROCA O INDEX REAL
   const moverTreino = async (index, direcao) => {
     const novaLista = [...meusTreinos];
     const novoIndex = index + direcao;
-
     if (novoIndex < 0 || novoIndex >= novaLista.length) return;
-
-    // Troca os objetos de lugar no array local primeiro
     const [removido] = novaLista.splice(index, 1);
     novaLista.splice(novoIndex, 0, removido);
-
-    // Salva a nova ordem de TODOS para garantir que não haja conflito
-    try {
-      for (let i = 0; i < novaLista.length; i++) {
-        const treinoRef = doc(db, "treinos", novaLista[i].id);
-        await updateDoc(treinoRef, { ordem: i });
-      }
-    } catch (err) {
-      console.error("Erro ao reordenar:", err);
+    for (let i = 0; i < novaLista.length; i++) {
+      await updateDoc(doc(db, "treinos", novaLista[i].id), { ordem: i });
     }
   };
 
+  // CORREÇÃO: AGORA FILTRA PELO SEU USERID PARA NÃO MUDAR O DE TERCEIROS
   const salvarAlteracoesExercicio = async (ex, novaCarga, novaSerie, novaObs) => {
-    if (window.confirm("Deseja salvar as alterações?")) {
-      const q = query(collection(db, "exercicios_treino"), where("nome", "==", ex.nome));
+    if (window.confirm("Deseja salvar as alterações? Isso mudará o peso em todos os SEUS treinos.")) {
+      const q = query(
+        collection(db, "exercicios_treino"), 
+        where("nome", "==", ex.nome),
+        where("userId", "==", user.uid) // Trava de segurança: apenas os seus
+      );
       const snap = await getDocs(q);
       snap.forEach((d) => {
         updateDoc(doc(db, "exercicios_treino", d.id), { 
@@ -108,7 +101,7 @@ function App() {
           obs: novaObs || ""
         });
       });
-      alert("Salvo!");
+      alert("Atualizado apenas nos seus treinos!");
     }
   };
 
@@ -118,12 +111,7 @@ function App() {
       const indexAtual = meusTreinos.findIndex(t => t.id === cicloSelecionado.ultimoTreinoId);
       let proximoIndex = indexAtual + 1 >= meusTreinos.length ? 0 : indexAtual + 1;
       const proximoTreino = meusTreinos[proximoIndex];
-      
-      await updateDoc(doc(db, "ciclos", cicloSelecionado.id), { 
-        ultimoTreinoId: proximoTreino.id, 
-        ultimoTreinoNome: proximoTreino.nome 
-      });
-
+      await updateDoc(doc(db, "ciclos", cicloSelecionado.id), { ultimoTreinoId: proximoTreino.id, ultimoTreinoNome: proximoTreino.nome });
       exerciciosDoDia.forEach(ex => updateDoc(doc(db, "exercicios_treino", ex.id), { concluido: false }));
     }
   };
@@ -218,9 +206,7 @@ function App() {
           <button onClick={async () => {
             if (!novoNome) return;
             if (window.confirm("Criar treino?")) {
-              const docRef = await addDoc(collection(db, "treinos"), { 
-                nome: novoNome, cicloId: cicloSelecionado.id, userId: user.uid, ordem: meusTreinos.length 
-              });
+              const docRef = await addDoc(collection(db, "treinos"), { nome: novoNome, cicloId: cicloSelecionado.id, userId: user.uid, ordem: meusTreinos.length });
               if (!cicloSelecionado.ultimoTreinoId) await updateDoc(doc(db, "ciclos", cicloSelecionado.id), { ultimoTreinoId: docRef.id, ultimoTreinoNome: novoNome });
               setNovoNome('');
             }
@@ -258,19 +244,35 @@ function App() {
             <button onClick={async () => {
               if(!novoNome) return;
               if(window.confirm("Criar ciclo?")) {
-                await addDoc(collection(db, "ciclos"), { nome: novoNome, userId: user.uid, createdAt: new Date(), alunoEmail: emailAluno.toLowerCase().trim(), status: emailAluno ? "pendente" : "aceito" });
+                await addDoc(collection(db, "ciclos"), { 
+                  nome: novoNome, userId: user.uid, createdAt: new Date(), 
+                  alunoEmail: emailAluno.toLowerCase().trim(), 
+                  status: emailAluno ? "pendente" : "aceito" 
+                });
                 setNovoNome(''); setEmailAluno('');
               }
             }} style={styles.btnAdd}>+</button>
           </div>
         </div>
         <h2>Meus Ciclos</h2>
-        {meusCiclos.map(c => (
-          <div key={c.id} style={styles.treinoCard} onClick={() => setCicloSelecionado(c)}>
-            <div style={{ flex: 1 }}><strong>{c.nome}</strong></div>
-            <button onClick={(e) => { e.stopPropagation(); if(window.confirm("Excluir?")) deleteDoc(doc(db, "ciclos", c.id)) }} style={{ color: 'red', border: 'none', background: 'none' }}>✕</button>
-          </div>
-        ))}
+        {meusCiclos.map(c => {
+          const isPendente = c.alunoEmail === user.email.toLowerCase() && c.status === "pendente";
+          return (
+            <div key={c.id} style={{...styles.treinoCard, border: isPendente ? '2px solid orange' : 'none'}} onClick={() => {
+              if(!isPendente) setCicloSelecionado(c);
+            }}>
+              <div style={{ flex: 1 }}>
+                <strong>{c.nome}</strong>
+                {isPendente && <div style={{fontSize:'12px', color:'orange'}}>Convite Recebido</div>}
+              </div>
+              {isPendente ? (
+                <button onClick={(e) => { e.stopPropagation(); updateDoc(doc(db, "ciclos", c.id), { status: "aceito" }) }} style={styles.btnAceitar}>Aceitar</button>
+              ) : (
+                <button onClick={(e) => { e.stopPropagation(); if(window.confirm("Excluir?")) deleteDoc(doc(db, "ciclos", c.id)) }} style={{ color: 'red', border: 'none', background: 'none' }}>✕</button>
+              )}
+            </div>
+          );
+        })}
       </main>
     </div>
   );
@@ -298,6 +300,7 @@ const styles = {
   cardTreinoDoDia: { background: '#1e293b', color: 'white', padding: '15px', borderRadius: '15px', marginBottom: '20px', textAlign: 'center' },
   btnConcluir: { backgroundColor: '#10b981', color: 'white', border: 'none', padding: '12px', borderRadius: '8px', marginTop: '10px', fontWeight: 'bold', width: '100%' },
   btnSalvarMini: { width:'100%', marginTop:'10px', padding:'8px', backgroundColor:'#007bff', color:'#fff', border:'none', borderRadius:'6px', fontSize:'12px', fontWeight:'bold' },
+  btnAceitar: { backgroundColor:'orange', color:'white', border:'none', padding:'5px 10px', borderRadius:'5px', fontWeight:'bold' },
   btnLogout: { color: 'red', border: 'none', background: 'none' },
   titleSection: { borderLeft: '4px solid #007bff', paddingLeft: '10px', margin: '20px 0 10px', fontWeight: 'bold' }
 };
