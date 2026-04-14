@@ -123,20 +123,32 @@ function App() {
 
   const salvarAlteracoesExercicio = async (ex, novaCarga, novaSerie, novaObs) => {
     if (window.confirm("Sincronizar pesos nesta conta?")) {
-      const donoEmail = (cicloSelecionado?.alunoEmail && cicloSelecionado.alunoEmail !== "") 
-                        ? cicloSelecionado.alunoEmail 
+      // 1. Define quem é o dono desse exercício específico
+      const donoEmail = (cicloSelecionado?.alunoEmail && cicloSelecionado.alunoEmail.trim() !== "") 
+                        ? cicloSelecionado.alunoEmail.toLowerCase().trim() 
                         : user.email.toLowerCase();
       
+      // 2. Atualiza o exercício atual
       await updateDoc(doc(db, "exercicios_treino", ex.id), { 
         carga: novaCarga, series: novaSerie, obs: novaObs || "", ownerEmail: donoEmail 
       });
 
-      const q = query(collection(db, "exercicios_treino"), where("nome", "==", ex.nome), where("ownerEmail", "==", donoEmail));
+      // 3. Sincroniza apenas com exercícios do MESMO dono
+      const q = query(
+        collection(db, "exercicios_treino"), 
+        where("nome", "==", ex.nome), 
+        where("ownerEmail", "==", donoEmail)
+      );
+      
       const snap = await getDocs(q);
       snap.forEach((d) => {
-        if(d.id !== ex.id) updateDoc(doc(db, "exercicios_treino", d.id), { carga: novaCarga, series: novaSerie, obs: novaObs || "" });
+        if(d.id !== ex.id) {
+          updateDoc(doc(db, "exercicios_treino", d.id), { 
+            carga: novaCarga, series: novaSerie, obs: novaObs || "" 
+          });
+        }
       });
-      alert("Peso sincronizado!");
+      alert("Peso sincronizado apenas para este perfil!");
     }
   };
 
