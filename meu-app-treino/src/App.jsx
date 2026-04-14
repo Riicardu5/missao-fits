@@ -166,7 +166,7 @@ function App() {
             <div style={{display:'flex', alignItems:'center'}}>
               <img src={ex.foto} style={styles.exerciseImgSmall} alt=""/>
               <strong style={{flex:1, marginLeft:'10px'}}>{ex.nome}</strong>
-              <button onClick={() => { if(window.confirm("Remover?")) deleteDoc(doc(db, "exercicios_treino", ex.id)) }} style={{color:'red', border:'none', background:'none'}}>✕</button>
+              <button onClick={async () => { if(window.confirm("Remover?")) { try { await deleteDoc(doc(db, "exercicios_treino", ex.id)); } catch(e) { alert("Erro de permissão no Firebase!"); console.error(e); } } }} style={{color:'red', border:'none', background:'none'}}>✕</button>
             </div>
           </div>
         ))}
@@ -256,8 +256,7 @@ function App() {
                 <button onClick={(e)=>{e.stopPropagation(); moverTreino(index, 1)}} style={styles.btnSeta}>▼</button>
               </div>
               <span style={{flex:1, fontWeight:'bold'}}>{t.nome}</span>
-              {/* REMOVIDA TRAVA DE USERID PARA PERMITIR ALUNO DELETAR TREINO */}
-              <button onClick={(e) => { e.stopPropagation(); if(window.confirm("Excluir treino?")) deleteDoc(doc(db, "treinos", t.id)) }} style={{color:'red', border:'none', background:'none', padding:'10px'}}>✕</button>
+              <button onClick={async (e) => { e.stopPropagation(); if(window.confirm("Excluir treino?")) { try { await deleteDoc(doc(db, "treinos", t.id)); } catch(err) { alert("Sem permissão para excluir!"); console.error(err); } } }} style={{color:'red', border:'none', background:'none', padding:'10px'}}>✕</button>
             </div>
           ))}
         </div>
@@ -314,7 +313,7 @@ function App() {
                 {isPendente ? (
                     <button onClick={(e) => { e.stopPropagation(); updateDoc(doc(db, "ciclos", c.id), { status: "aceito" }) }} style={styles.btnAceitar}>Aceitar</button>
                 ) : (
-                    <button onClick={(e) => { e.stopPropagation(); if(window.confirm("Excluir ciclo?")) deleteDoc(doc(db, "ciclos", c.id)) }} style={{ color: 'red', border: 'none', background: 'none' }}>✕</button>
+                    <button onClick={async (e) => { e.stopPropagation(); if(window.confirm("Excluir ciclo?")) { try { await deleteDoc(doc(db, "ciclos", c.id)); } catch(err) { alert("Sem permissão!"); } } }} style={{ color: 'red', border: 'none', background: 'none' }}>✕</button>
                 )}
               </div>
             </div>
