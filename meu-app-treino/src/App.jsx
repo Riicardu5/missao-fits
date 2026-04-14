@@ -87,9 +87,18 @@ function App() {
 
   const salvarAlteracoesExercicio = async (ex, novaCarga, novaSerie, novaObs) => {
     if (window.confirm("Salvar alterações para esta conta?")) {
-      // Fallback: se o exercício for antigo e não tiver ownerEmail, usa o seu.
-      const donoEmail = ex.ownerEmail || user.email.toLowerCase();
+      // Se o exercício não tem ownerEmail, definimos um agora
+      const donoEmail = ex.ownerEmail || (cicloSelecionado?.alunoEmail ? cicloSelecionado.alunoEmail : user.email.toLowerCase());
       
+      // Atualiza o próprio exercício imediatamente (e garante que ele tenha o ownerEmail agora)
+      await updateDoc(doc(db, "exercicios_treino", ex.id), { 
+        carga: novaCarga, 
+        series: novaSerie,
+        obs: novaObs || "",
+        ownerEmail: donoEmail 
+      });
+
+      // Busca outros que pertençam ao mesmo dono (e-mail)
       const q = query(
         collection(db, "exercicios_treino"), 
         where("nome", "==", ex.nome),
@@ -98,11 +107,13 @@ function App() {
       
       const snap = await getDocs(q);
       snap.forEach((d) => {
-        updateDoc(doc(db, "exercicios_treino", d.id), { 
-          carga: novaCarga, 
-          series: novaSerie,
-          obs: novaObs || ""
-        });
+        if(d.id !== ex.id) { // Não precisa atualizar o que já acabamos de atualizar acima
+            updateDoc(doc(db, "exercicios_treino", d.id), { 
+              carga: novaCarga, 
+              series: novaSerie,
+              obs: novaObs || ""
+            });
+        }
       });
       alert("Peso sincronizado com sucesso!");
     }
@@ -156,15 +167,14 @@ function App() {
           {bancoExercicios.filter(e => e.nome.toLowerCase().includes(busca.toLowerCase())).map(ex => (
             <div key={ex.id} style={styles.treinoCard} onClick={async () => {
               if(window.confirm(`Adicionar ${ex.nome}?`)) {
-                // Se o ciclo tiver aluno, o dono é o e-mail do aluno. Se não, é o seu.
-                const finalOwner = cicloSelecionado.alunoEmail && cicloSelecionado.alunoEmail.trim() !== "" 
+                const donoEmail = cicloSelecionado.alunoEmail && cicloSelecionado.alunoEmail.trim() !== "" 
                    ? cicloSelecionado.alunoEmail 
                    : user.email.toLowerCase();
 
                 addDoc(collection(db, "exercicios_treino"), { 
                   treinoId: treinoSelecionado.id, 
                   userId: user.uid,
-                  ownerEmail: finalOwner,
+                  ownerEmail: donoEmail,
                   nome: ex.nome, 
                   foto: ex.foto, series: "3", carga: "10", concluido: false, obs: "" 
                 });
