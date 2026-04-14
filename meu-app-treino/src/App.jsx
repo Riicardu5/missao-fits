@@ -85,13 +85,13 @@ function App() {
     }
   };
 
-  // CORREÇÃO: SINCRONIZA PELO DONO DO EXERCÍCIO (USERID DO OBJETO)
   const salvarAlteracoesExercicio = async (ex, novaCarga, novaSerie, novaObs) => {
-    if (window.confirm("Salvar alterações? Isso mudará o peso em todos os treinos desta conta específica.")) {
+    if (window.confirm("Salvar alterações? Isso mudará o peso em todos os treinos desta conta.")) {
+      // Filtra pelo ownerEmail para garantir que não misture Conta 1 com Conta 2
       const q = query(
         collection(db, "exercicios_treino"), 
         where("nome", "==", ex.nome),
-        where("userId", "==", ex.userId) // Muda conforme o dono do exercício, não necessariamente você
+        where("ownerEmail", "==", ex.ownerEmail)
       );
       const snap = await getDocs(q);
       snap.forEach((d) => {
@@ -101,7 +101,7 @@ function App() {
           obs: novaObs || ""
         });
       });
-      alert("Peso atualizado para esta conta!");
+      alert("Peso sincronizado para esta conta!");
     }
   };
 
@@ -153,16 +153,13 @@ function App() {
           {bancoExercicios.filter(e => e.nome.toLowerCase().includes(busca.toLowerCase())).map(ex => (
             <div key={ex.id} style={styles.treinoCard} onClick={async () => {
               if(window.confirm(`Adicionar ${ex.nome}?`)) {
-                // Ao adicionar, o userId do exercício é o do ciclo (se for aluno, grava o id do aluno)
-                const donoId = cicloSelecionado.alunoEmail && cicloSelecionado.status === "aceito" 
-                    ? (cicloSelecionado.userId === user.uid ? "aluno_id_placeholder" : cicloSelecionado.userId) 
-                    : user.uid;
+                // Define quem é o dono real do dado (o e-mail do aluno ou o seu)
+                const donoEmail = cicloSelecionado.alunoEmail || user.email.toLowerCase();
                 
-                // Se o criador for o personal, precisamos garantir que o exercício pertença ao contexto do ciclo
-                // Para simplificar: se o ciclo tem alunoEmail, o exercício pertence ao dono desse email
                 addDoc(collection(db, "exercicios_treino"), { 
                   treinoId: treinoSelecionado.id, 
-                  userId: cicloSelecionado.userId, // Mantemos o vínculo com o criador do ciclo
+                  userId: user.uid,
+                  ownerEmail: donoEmail, // NOVO CAMPO DE TRAVA
                   nome: ex.nome, 
                   foto: ex.foto, series: "3", carga: "10", concluido: false, obs: "" 
                 });
@@ -266,7 +263,8 @@ function App() {
         <h2>Meus Ciclos</h2>
         {meusCiclos.map(c => {
           const isPendente = c.alunoEmail === user.email.toLowerCase() && c.status === "pendente";
-          const eMeu = c.userId === user.uid && (!c.alunoEmail || c.alunoEmail === user.email.toLowerCase());
+          const eDono = c.userId === user.uid;
+          const souAluno = c.alunoEmail === user.email.toLowerCase();
           
           return (
             <div key={c.id} style={{...styles.treinoCard, border: isPendente ? '2px solid orange' : 'none'}} onClick={() => {
@@ -275,7 +273,7 @@ function App() {
               <div style={{ flex: 1 }}>
                 <strong>{c.nome}</strong>
                 <div style={{fontSize:'10px', color:'#777'}}>
-                    {eMeu ? "● Meu Treino" : `● Aluno: ${c.alunoEmail}`}
+                    {eDono && !c.alunoEmail ? "● Meu Treino" : (eDono ? `● Aluno: ${c.alunoEmail}` : `● Personal: ${c.userId.substring(0,5)}`)}
                 </div>
                 {isPendente && <div style={{fontSize:'12px', color:'orange', fontWeight:'bold'}}>Convite Recebido</div>}
               </div>
