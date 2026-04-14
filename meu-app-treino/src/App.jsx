@@ -86,13 +86,16 @@ function App() {
   };
 
   const salvarAlteracoesExercicio = async (ex, novaCarga, novaSerie, novaObs) => {
-    if (window.confirm("Salvar alterações? Isso mudará o peso em todos os treinos desta conta.")) {
-      // Filtra pelo ownerEmail para garantir que não misture Conta 1 com Conta 2
+    if (window.confirm("Salvar alterações para esta conta?")) {
+      // Fallback: se o exercício for antigo e não tiver ownerEmail, usa o seu.
+      const donoEmail = ex.ownerEmail || user.email.toLowerCase();
+      
       const q = query(
         collection(db, "exercicios_treino"), 
         where("nome", "==", ex.nome),
-        where("ownerEmail", "==", ex.ownerEmail)
+        where("ownerEmail", "==", donoEmail)
       );
+      
       const snap = await getDocs(q);
       snap.forEach((d) => {
         updateDoc(doc(db, "exercicios_treino", d.id), { 
@@ -101,7 +104,7 @@ function App() {
           obs: novaObs || ""
         });
       });
-      alert("Peso sincronizado para esta conta!");
+      alert("Peso sincronizado com sucesso!");
     }
   };
 
@@ -153,13 +156,15 @@ function App() {
           {bancoExercicios.filter(e => e.nome.toLowerCase().includes(busca.toLowerCase())).map(ex => (
             <div key={ex.id} style={styles.treinoCard} onClick={async () => {
               if(window.confirm(`Adicionar ${ex.nome}?`)) {
-                // Define quem é o dono real do dado (o e-mail do aluno ou o seu)
-                const donoEmail = cicloSelecionado.alunoEmail || user.email.toLowerCase();
-                
+                // Se o ciclo tiver aluno, o dono é o e-mail do aluno. Se não, é o seu.
+                const finalOwner = cicloSelecionado.alunoEmail && cicloSelecionado.alunoEmail.trim() !== "" 
+                   ? cicloSelecionado.alunoEmail 
+                   : user.email.toLowerCase();
+
                 addDoc(collection(db, "exercicios_treino"), { 
                   treinoId: treinoSelecionado.id, 
                   userId: user.uid,
-                  ownerEmail: donoEmail, // NOVO CAMPO DE TRAVA
+                  ownerEmail: finalOwner,
                   nome: ex.nome, 
                   foto: ex.foto, series: "3", carga: "10", concluido: false, obs: "" 
                 });
@@ -264,7 +269,6 @@ function App() {
         {meusCiclos.map(c => {
           const isPendente = c.alunoEmail === user.email.toLowerCase() && c.status === "pendente";
           const eDono = c.userId === user.uid;
-          const souAluno = c.alunoEmail === user.email.toLowerCase();
           
           return (
             <div key={c.id} style={{...styles.treinoCard, border: isPendente ? '2px solid orange' : 'none'}} onClick={() => {
@@ -273,7 +277,7 @@ function App() {
               <div style={{ flex: 1 }}>
                 <strong>{c.nome}</strong>
                 <div style={{fontSize:'10px', color:'#777'}}>
-                    {eDono && !c.alunoEmail ? "● Meu Treino" : (eDono ? `● Aluno: ${c.alunoEmail}` : `● Personal: ${c.userId.substring(0,5)}`)}
+                    {eDono && (!c.alunoEmail || c.alunoEmail === "") ? "● Meu Treino" : (eDono ? `● Aluno: ${c.alunoEmail}` : `● Personal: ${c.userId.substring(0,5)}`)}
                 </div>
                 {isPendente && <div style={{fontSize:'12px', color:'orange', fontWeight:'bold'}}>Convite Recebido</div>}
               </div>
