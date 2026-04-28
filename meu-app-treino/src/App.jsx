@@ -19,7 +19,6 @@ function App() {
   const [novoNome, setNovoNome] = useState('');
   const [busca, setBusca] = useState('');
 
-  // Monitora Login
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
@@ -28,7 +27,6 @@ function App() {
     return () => unsub();
   }, []);
 
-  // Monitora Ciclos (Seus e onde você é aluno)
   useEffect(() => {
     if (user) {
       const q = query(collection(db, "ciclos"), or(where("userId", "==", user.uid), where("alunoEmail", "==", user.email.toLowerCase())));
@@ -45,7 +43,6 @@ function App() {
     }
   }, [user, cicloSelecionado?.id]);
 
-  // Monitora Treinos do Ciclo
   useEffect(() => {
     if (cicloSelecionado?.id) {
       const q = query(collection(db, "treinos"), where("cicloId", "==", cicloSelecionado.id));
@@ -58,7 +55,6 @@ function App() {
     }
   }, [cicloSelecionado?.id]);
 
-  // Monitora Exercícios do Treino Ativo (Para execução)
   useEffect(() => {
     if (cicloSelecionado?.ultimoTreinoId) {
       const q = query(collection(db, "exercicios_treino"), where("treinoId", "==", cicloSelecionado.ultimoTreinoId));
@@ -69,7 +65,6 @@ function App() {
     }
   }, [cicloSelecionado?.ultimoTreinoId]);
 
-  // Monitora Exercícios do Treino selecionado para Edição
   useEffect(() => {
     if (treinoSelecionado?.id) {
       const q = query(collection(db, "exercicios_treino"), where("treinoId", "==", treinoSelecionado.id));
@@ -80,7 +75,6 @@ function App() {
     }
   }, [treinoSelecionado]);
 
-  // Funções de Movimentação (Ordem)
   const moverCiclo = async (index, direcao) => {
     const novaLista = [...meusCiclos];
     const novoIndex = index + direcao;
@@ -103,7 +97,6 @@ function App() {
     }
   };
 
-  // Função de Clonagem
   const clonarCiclo = async (cicloOriginal) => {
     const novoEmail = window.prompt("E-mail do novo aluno (vazio p/ você):", cicloOriginal.alunoEmail || "");
     if (novoEmail === null) return;
@@ -133,7 +126,6 @@ function App() {
     alert("Ciclo clonado com sucesso!");
   };
 
-  // Salvar Peso e Sincronizar
   const salvarAlteracoesExercicio = async (ex, novaCarga, novaSerie, novaObs) => {
     if (window.confirm("Sincronizar pesos nesta conta?")) {
       const donoEmail = (cicloSelecionado?.alunoEmail && cicloSelecionado.alunoEmail.trim() !== "") 
@@ -153,14 +145,12 @@ function App() {
     }
   };
 
-  // Render Login
   if (!user) return (
     <div style={styles.containerMobile}><div style={styles.contentCenter}>
       <h1>Missão Fits 💪</h1><button onClick={() => signInWithPopup(auth, provider)} style={styles.btnGoogle}>Entrar com Google</button>
     </div></div>
   );
 
-  // TELA DE EDIÇÃO DE TREINO (Adicionar Exercícios)
   if (treinoSelecionado) return (
     <div style={styles.containerMobile}>
       <header style={styles.header}>
@@ -220,7 +210,6 @@ function App() {
     </div>
   );
 
-  // TELA DO CICLO (Treino do dia e Gerenciar Treinos)
   if (cicloSelecionado) return (
     <div style={styles.containerMobile}>
       <header style={styles.header}>
@@ -259,10 +248,18 @@ function App() {
               <div style={{flex:1}}><label style={styles.labelInput}>Séries</label><input id={`s-${ex.id}`} defaultValue={ex.series} style={styles.inputPequeno}/></div>
               <div style={{flex:1}}><label style={styles.labelInput}>Peso (kg)</label><input id={`c-${ex.id}`} defaultValue={ex.carga} style={styles.inputPequeno}/></div>
             </div>
+            
+            {/* Campo Observação de volta */}
+            <div style={{marginTop:'10px'}}>
+              <label style={styles.labelInput}>Observação</label>
+              <input id={`o-${ex.id}`} defaultValue={ex.obs} placeholder="Ex: Cadência 3-0-1" style={styles.inputFullObs}/>
+            </div>
+
             <button onClick={() => {
                 const s = document.getElementById(`s-${ex.id}`).value;
                 const c = document.getElementById(`c-${ex.id}`).value;
-                salvarAlteracoesExercicio(ex, c, s, ex.obs);
+                const o = document.getElementById(`o-${ex.id}`).value;
+                salvarAlteracoesExercicio(ex, c, s, o);
             }} style={styles.btnSalvarMini}>Salvar Alterações</button>
           </div>
         ))}
@@ -293,7 +290,6 @@ function App() {
     </div>
   );
 
-  // TELA INICIAL (Lista de Ciclos)
   return (
     <div style={styles.containerMobile}>
       <header style={styles.header}>
@@ -359,6 +355,7 @@ const styles = {
   main: { padding: '20px' },
   cardPersonal: { backgroundColor: '#e3f2fd', padding: '15px', borderRadius: '15px', marginBottom: '15px' },
   inputFull: { width:'100%', marginBottom:'10px', padding:'10px', borderRadius:'10px', border:'1px solid #DDD', boxSizing:'border-box' },
+  inputFullObs: { width:'100%', padding:'8px', border:'1px solid #ddd', borderRadius:'6px', boxSizing:'border-box', marginTop:'5px' },
   addArea: { display: 'flex', gap: '10px' },
   inputTreino: { flex: 1, padding: '10px', borderRadius: '10px', border: '1px solid #DDD', outline: 'none' },
   btnAdd: { backgroundColor: '#007bff', color: 'white', border: 'none', width: '45px', borderRadius: '10px', fontSize: '24px' },
